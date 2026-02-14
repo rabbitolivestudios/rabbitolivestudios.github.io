@@ -3,12 +3,12 @@ export function handleFactPage(): Response {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=800">
+<meta name="viewport" content="width=800, initial-scale=1, maximum-scale=1">
 <title>Moment Before</title>
 <style>
 * { margin: 0; padding: 0; }
-body { width: 800px; height: 480px; overflow: hidden; background: #fff; }
-img { display: block; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #fff; }
+img { display: block; width: 100vw; height: 100vh; object-fit: cover; }
 </style>
 </head>
 <body>
