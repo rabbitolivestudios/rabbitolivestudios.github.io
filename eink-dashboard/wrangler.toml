@@ -13,6 +13,10 @@ id = "de97776d35af4df08b13fd2158acebdc"
 [ai]
 binding = "AI"
 
+# Cloudflare Images (JPEG→PNG conversion for AI output)
+[images]
+binding = "IMAGES"
+
 # Daily cron at 10:00 UTC = 04:00 CST (America/Chicago)
 [triggers]
 crons = ["0 10 * * *"]

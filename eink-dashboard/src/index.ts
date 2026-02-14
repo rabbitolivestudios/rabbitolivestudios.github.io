@@ -112,8 +112,13 @@ async function handleFactImage(env: Env): Promise<Response> {
   try {
     const png = await generateMomentPNG(env);
 
-    // Store in KV as base64
-    const b64 = btoa(String.fromCharCode(...png));
+    // Store in KV as base64 (chunk to avoid stack overflow)
+    let binary = "";
+    const CHUNK = 8192;
+    for (let i = 0; i < png.length; i += CHUNK) {
+      binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
+    }
+    const b64 = btoa(binary);
     await env.CACHE.put(cacheKey, b64);
 
     return new Response(png, {
@@ -135,12 +140,16 @@ async function handleFactImage(env: Env): Promise<Response> {
 async function generateMomentPNG(env: Env): Promise<Uint8Array> {
   // 1. Get today's events from Wikipedia
   const { events, displayDate } = await getTodayEvents(env);
+  console.log(`Pipeline: fetched ${events.length} events for ${displayDate}`);
 
   // 2. LLM picks event and generates scene + image prompt
   const moment = await generateMomentBefore(env, events);
+  console.log(`Pipeline: LLM picked ${moment.year}, ${moment.location}`);
 
   // 3. Generate the image (AI + dither + text overlay + encode)
-  return generateMomentImage(env, moment, displayDate);
+  const png = await generateMomentImage(env, moment, displayDate);
+  console.log(`Pipeline: generated ${png.length} byte PNG`);
+  return png;
 }
 
 function handleHealth(): Response {
@@ -171,7 +180,12 @@ async function handleScheduled(env: Env): Promise<void> {
     console.log(`Cron: LLM picked ${moment.year}, ${moment.location}`);
 
     const png = await generateMomentImage(env, moment, displayDate);
-    const b64 = btoa(String.fromCharCode(...png));
+    let cronBinary = "";
+    const CRON_CHUNK = 8192;
+    for (let i = 0; i < png.length; i += CRON_CHUNK) {
+      cronBinary += String.fromCharCode(...png.subarray(i, i + CRON_CHUNK));
+    }
+    const b64 = btoa(cronBinary);
     const cacheKey = `factpng:${dateStr}`;
     await env.CACHE.put(cacheKey, b64);
     console.log(`Cron: cached Moment Before image for ${dateStr} (${png.length} bytes)`);

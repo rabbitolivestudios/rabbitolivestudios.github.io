@@ -116,7 +116,8 @@ export async function generateMomentBefore(
       temperature: 0.7,
     });
 
-    const text = response?.response ?? response?.result?.response ?? "";
+    const raw = response?.response ?? response?.result?.response ?? "";
+    const text = typeof raw === "string" ? raw : JSON.stringify(raw);
     const parsed = extractJSON(text);
     if (parsed) {
       return parsed;

@@ -1,11 +1,12 @@
 /**
  * "Moment Before" image pipeline.
  *
- * 1. Generate a woodcut-style image via Workers AI (FLUX-schnell)
- * 2. Decode the returned PNG into grayscale pixels
- * 3. Apply Floyd-Steinberg dithering → 1-bit
- * 4. Overlay date / year / location text at the bottom
- * 5. Encode as 1-bit monochrome PNG for the e-ink display
+ * 1. Generate a woodcut-style image via Workers AI (FLUX-schnell) → JPEG
+ * 2. Convert JPEG → PNG via Cloudflare Images binding
+ * 3. Decode the PNG into grayscale pixels
+ * 4. Apply Floyd-Steinberg dithering → 1-bit
+ * 5. Overlay date / year / location text at the bottom
+ * 6. Encode as 1-bit monochrome PNG for the e-ink display
  *
  * Output: 800 × 480 px, 1-bit (black/white)
  */
@@ -57,12 +58,37 @@ async function generateAIImage(env: Env, prompt: string): Promise<Uint8Array> {
   if (result instanceof ArrayBuffer) return new Uint8Array(result);
   if (result instanceof Uint8Array) return result;
 
-  // Some models return { image: base64string }
-  if (typeof result === "object" && typeof result.image === "string") {
-    return Uint8Array.from(atob(result.image), (c) => c.charCodeAt(0));
+  // FLUX-schnell returns { image: base64_jpeg_string }
+  if (typeof result === "object" && result !== null) {
+    const img = result.image ?? result.images?.[0];
+    if (img) {
+      if (typeof img === "string") {
+        return Uint8Array.from(atob(img), (c) => c.charCodeAt(0));
+      }
+      if (img instanceof Uint8Array) return img;
+      if (img instanceof ArrayBuffer) return new Uint8Array(img);
+      if (img instanceof ReadableStream) {
+        const reader = img.getReader();
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          total += value.length;
+        }
+        const bytes = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) {
+          bytes.set(c, off);
+          off += c.length;
+        }
+        return bytes;
+      }
+    }
   }
 
-  throw new Error("Unexpected AI image response type");
+  throw new Error(`Unexpected AI image response type: ${typeof result}`);
 }
 
 // --- Floyd-Steinberg dithering ---
@@ -194,13 +220,17 @@ export async function generateMomentImage(
   moment: MomentBeforeData,
   displayDate: string
 ): Promise<Uint8Array> {
-  // 1. Generate woodcut image via AI
-  const pngBytes = await generateAIImage(env, moment.imagePrompt);
+  // 1. Generate woodcut image via AI (returns JPEG)
+  const jpegBytes = await generateAIImage(env, moment.imagePrompt);
 
-  // 2. Decode PNG to grayscale
+  // 2. Convert JPEG → PNG via Cloudflare Images binding
+  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
+  const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
+
+  // 3. Decode PNG to grayscale
   const decoded = await decodePNG(pngBytes);
 
-  // 3. Resize to 800 × IMAGE_HEIGHT if needed
+  // 4. Resize to 800 × IMAGE_HEIGHT if needed
   let gray: Uint8Array;
   if (decoded.width === WIDTH && decoded.height === IMAGE_HEIGHT) {
     gray = decoded.gray;
@@ -208,12 +238,12 @@ export async function generateMomentImage(
     gray = resizeGray(decoded.gray, decoded.width, decoded.height, WIDTH, IMAGE_HEIGHT);
   }
 
-  // 4. Floyd-Steinberg dither → 1-bit (writes into full 800×480 buffer)
+  // 5. Floyd-Steinberg dither → 1-bit (writes into full 800×480 buffer)
   const buf = floydSteinberg(gray, WIDTH, IMAGE_HEIGHT);
 
-  // 5. Draw the info strip (date, year, location) in the bottom 64px
+  // 6. Draw the info strip (date, year, location) in the bottom 64px
   drawInfoStrip(buf, moment, displayDate);
 
-  // 6. Encode as 1-bit PNG
+  // 7. Encode as 1-bit PNG
   return encodePNG1Bit(buf, WIDTH, HEIGHT);
 }

@@ -1,6 +1,7 @@
 export interface Env {
   CACHE: KVNamespace;
   AI: Ai;
+  IMAGES: any;
 }
 
 // --- Moment Before types ---
