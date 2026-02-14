@@ -8,7 +8,7 @@
 
 // 8x8 pixel font data — each character is 8 bytes, each byte is one row (MSB = left pixel).
 // Covers ASCII 32 (space) through 126 (~). Classic CP437-style bitmap font.
-const FONT_8X8: number[][] = [
+export const FONT_8X8: number[][] = [
   // 32: space
   [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
   // 33: !

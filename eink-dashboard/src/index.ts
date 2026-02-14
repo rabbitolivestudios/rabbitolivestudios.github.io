@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
-import { generateMomentImage } from "./image";
+import { generateMomentImage, generateMomentImageRaw } from "./image";
 import { generateMomentBefore } from "./moment";
 
 const VERSION = "2.0.0";
@@ -93,7 +93,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   const month = parts.find((p) => p.type === "month")!.value;
   const day = parts.find((p) => p.type === "day")!.value;
   const dateStr = `${year}-${month}-${day}`;
-  const cacheKey = `factpng:${dateStr}`;
+  const cacheKey = `factpng:v8:${dateStr}`;
 
   // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
@@ -186,7 +186,7 @@ async function handleScheduled(env: Env): Promise<void> {
       cronBinary += String.fromCharCode(...png.subarray(i, i + CRON_CHUNK));
     }
     const b64 = btoa(cronBinary);
-    const cacheKey = `factpng:${dateStr}`;
+    const cacheKey = `factpng:v8:${dateStr}`;
     await env.CACHE.put(cacheKey, b64);
     console.log(`Cron: cached Moment Before image for ${dateStr} (${png.length} bytes)`);
 
@@ -235,6 +235,14 @@ export default {
         return handleFact(env);
       case "/fact.png":
         return handleFactImage(env);
+      case "/fact-raw.jpg": {
+        const { events, displayDate } = await getTodayEvents(env);
+        const moment = await generateMomentBefore(env, events);
+        const jpeg = await generateMomentImageRaw(env, moment);
+        return new Response(jpeg, {
+          headers: { "Content-Type": "image/jpeg", "Access-Control-Allow-Origin": "*" },
+        });
+      }
       case "/health":
         return handleHealth();
       default:

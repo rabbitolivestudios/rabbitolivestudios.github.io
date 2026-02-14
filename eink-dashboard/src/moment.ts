@@ -21,15 +21,19 @@ You will receive a numbered list of events that happened on today's date in hist
 Your job:
 1. Pick the ONE event that would make the most visually striking, dramatic, or mysterious image.
    Prefer events that are widely known, have a clear physical setting, and where the "moment before" creates suspense.
-2. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
+2. Write a short event title (2-5 words) that names the event. Examples: "Sinking of the Titanic", "Kasparov vs Deep Blue", "Moon Landing".
+3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
    Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
-3. Extract the geographic location where the event took place.
-4. Write an image-generation prompt for a woodcut / wood-carving illustration of that scene.
-   The prompt must specify: traditional woodcut print, black ink on white paper, high contrast,
-   bold lines, cross-hatching for shading, no text in the image.
+4. Extract the geographic location where the event took place.
+5. Write an image-generation prompt for a BLACK INK PEN ILLUSTRATION of that scene.
+   The prompt MUST specify: black ink pen editorial illustration on white paper, fine line work with
+   cross-hatching for shadows, clean white background showing through, high contrast black and white,
+   no gray wash, no shading gradients, all shadows rendered as cross-hatched ink lines,
+   detailed realistic drawing, cinematic composition, no text or lettering,
+   no pens, no pencils, no drawing tools, no art supplies, no hands.
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
-{"year":1912,"location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"Traditional woodcut illustration, black ink on white paper, high contrast bold lines with cross-hatching. A grand ocean liner sailing through calm dark waters at night under a canopy of stars. A faint pale iceberg shape barely visible on the far horizon. Detailed wood engraving style with fine parallel lines for shading the sea and sky. No text."}`;
+{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Clean white background, high contrast black and white, all shadows rendered as cross-hatched ink lines. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -80,6 +84,7 @@ function validateMoment(obj: any): MomentBeforeData | null {
     return {
       year: obj.year,
       location: obj.location,
+      title: obj.title ?? "",
       scene: obj.scene ?? "",
       imagePrompt: obj.prompt,
     };
@@ -136,11 +141,12 @@ function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeD
   return {
     year: event.year,
     location: "Unknown",
+    title: "",
     scene: event.text,
     imagePrompt:
-      `Traditional woodcut illustration, black ink on white paper, high contrast bold lines ` +
-      `with cross-hatching. A dramatic historical scene from ${event.year}. ` +
-      `Detailed wood engraving style with fine parallel lines for shading. No text.`,
+      `Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. ` +
+      `A dramatic historical scene from ${event.year}. ` +
+      `Clean white background, high contrast black and white, cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
   };
 }
 
@@ -148,11 +154,12 @@ function fallback(): MomentBeforeData {
   return {
     year: 1969,
     location: "Cape Canaveral, Florida",
+    title: "Apollo 11 Launch",
     scene: "A towering rocket stands on the launch pad, wreathed in vapor, under a pale dawn sky.",
     imagePrompt:
-      "Traditional woodcut illustration, black ink on white paper, high contrast bold lines " +
-      "with cross-hatching. A towering Saturn V rocket standing on a launch pad at dawn, " +
+      "Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. " +
+      "A towering Saturn V rocket standing on a launch pad at dawn, " +
       "wreathed in wisps of vapor, with flat Florida marshland stretching to the horizon. " +
-      "Detailed wood engraving style with fine parallel lines for shading. No text.",
+      "Clean white background, high contrast black and white, cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
   };
 }

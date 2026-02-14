@@ -9,6 +9,7 @@ export interface Env {
 export interface MomentBeforeData {
   year: number;
   location: string;
+  title: string;
   scene: string;
   imagePrompt: string;
 }

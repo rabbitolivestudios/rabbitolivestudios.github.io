@@ -184,3 +184,53 @@ export async function encodePNG1Bit(
 
   return png;
 }
+
+function makeIHDRGray8(width: number, height: number): Uint8Array {
+  const data = new Uint8Array(13);
+  writeU32BE(data, 0, width);
+  writeU32BE(data, 4, height);
+  data[8] = 8;  // bit depth = 8
+  data[9] = 0;  // color type = grayscale
+  data[10] = 0; // compression = deflate
+  data[11] = 0; // filter = adaptive
+  data[12] = 0; // interlace = none
+  return makeChunk("IHDR", data);
+}
+
+/**
+ * Encode an 8-bit grayscale image as PNG.
+ * @param gray - Uint8Array of size width*height, values 0 (black) to 255 (white).
+ * @param width - image width in pixels
+ * @param height - image height in pixels
+ * @returns PNG file bytes
+ */
+export async function encodePNGGray8(
+  gray: Uint8Array,
+  width: number,
+  height: number
+): Promise<Uint8Array> {
+  const ihdr = makeIHDRGray8(width, height);
+
+  // Build raw scanlines: each row = filter byte (0x00) + width gray bytes
+  const raw = new Uint8Array(height * (1 + width));
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * (1 + width);
+    raw[rowOffset] = 0; // filter type: None
+    raw.set(gray.subarray(y * width, (y + 1) * width), rowOffset + 1);
+  }
+
+  const compressed = await deflateRaw(raw);
+  const zlibData = zlibWrap(compressed, raw);
+  const idat = makeChunk("IDAT", zlibData);
+  const iend = makeIEND();
+
+  const totalLen = PNG_SIGNATURE.length + ihdr.length + idat.length + iend.length;
+  const png = new Uint8Array(totalLen);
+  let offset = 0;
+  png.set(PNG_SIGNATURE, offset); offset += PNG_SIGNATURE.length;
+  png.set(ihdr, offset); offset += ihdr.length;
+  png.set(idat, offset); offset += idat.length;
+  png.set(iend, offset);
+
+  return png;
+}

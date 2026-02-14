@@ -1,135 +1,56 @@
 /**
  * "Moment Before" image pipeline.
  *
- * 1. Generate a woodcut-style image via Workers AI (FLUX-schnell) → JPEG
+ * 1. Generate an ink-illustration image via Workers AI (FLUX-2-dev) → JPEG
  * 2. Convert JPEG → PNG via Cloudflare Images binding
  * 3. Decode the PNG into grayscale pixels
- * 4. Apply Floyd-Steinberg dithering → 1-bit
- * 5. Overlay date / year / location text at the bottom
- * 6. Encode as 1-bit monochrome PNG for the e-ink display
+ * 4. Resize to 800×480 if needed
+ * 5. Overlay location + date text
+ * 6. Encode as 8-bit grayscale PNG
  *
- * Output: 800 × 480 px, 1-bit (black/white)
+ * Output: 800 × 480 px, 8-bit grayscale, full-bleed image
  */
 
-import { encodePNG1Bit } from "./png";
+import { encodePNGGray8 } from "./png";
 import { decodePNG } from "./png-decode";
-import { drawTextCentered } from "./font";
+import { measureText } from "./font";
+import { FONT_8X8 as FONT_DATA } from "./font";
 import type { Env, MomentBeforeData } from "./types";
 
 const WIDTH = 800;
 const HEIGHT = 480;
-const IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
-
-// Info strip at the bottom of the image
-const INFO_HEIGHT = 64;
-const IMAGE_HEIGHT = HEIGHT - INFO_HEIGHT; // 416px for the AI image
+const IMAGE_MODEL = "@cf/black-forest-labs/flux-2-dev" as const;
 
 // --- AI image generation ---
 
 async function generateAIImage(env: Env, prompt: string): Promise<Uint8Array> {
+  // FLUX-2 models require multipart form data
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("width", String(WIDTH));
+  form.append("height", String(HEIGHT));
+  form.append("steps", "20");
+
+  const formResponse = new Response(form);
+  const formStream = formResponse.body!;
+  const formContentType = formResponse.headers.get("content-type")!;
+
   const result: any = await env.AI.run(IMAGE_MODEL, {
-    prompt,
-    width: 800,
-    height: 416,
-    num_steps: 4,
+    multipart: {
+      body: formStream,
+      contentType: formContentType,
+    },
   });
 
-  // Workers AI image models return a ReadableStream or Uint8Array
-  if (result instanceof ReadableStream) {
-    const reader = result.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      total += value.length;
-    }
-    const bytes = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) {
-      bytes.set(c, off);
-      off += c.length;
-    }
-    return bytes;
-  }
-
-  // Already a Uint8Array or ArrayBuffer
-  if (result instanceof ArrayBuffer) return new Uint8Array(result);
-  if (result instanceof Uint8Array) return result;
-
-  // FLUX-schnell returns { image: base64_jpeg_string }
+  // Result is { image: base64_string }
   if (typeof result === "object" && result !== null) {
     const img = result.image ?? result.images?.[0];
-    if (img) {
-      if (typeof img === "string") {
-        return Uint8Array.from(atob(img), (c) => c.charCodeAt(0));
-      }
-      if (img instanceof Uint8Array) return img;
-      if (img instanceof ArrayBuffer) return new Uint8Array(img);
-      if (img instanceof ReadableStream) {
-        const reader = img.getReader();
-        const chunks: Uint8Array[] = [];
-        let total = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          total += value.length;
-        }
-        const bytes = new Uint8Array(total);
-        let off = 0;
-        for (const c of chunks) {
-          bytes.set(c, off);
-          off += c.length;
-        }
-        return bytes;
-      }
+    if (img && typeof img === "string") {
+      return Uint8Array.from(atob(img), (c) => c.charCodeAt(0));
     }
   }
 
   throw new Error(`Unexpected AI image response type: ${typeof result}`);
-}
-
-// --- Floyd-Steinberg dithering ---
-
-/**
- * Convert grayscale (0-255) to 1-bit via Floyd-Steinberg error diffusion.
- * Returns a Uint8Array where 0=black, 1=white — same format as the PNG encoder expects.
- */
-function floydSteinberg(
-  gray: Uint8Array,
-  width: number,
-  height: number
-): Uint8Array {
-  // Work on a copy as Float32 for error accumulation
-  const buf = new Float32Array(width * height);
-  for (let i = 0; i < gray.length; i++) buf[i] = gray[i];
-
-  const out = new Uint8Array(WIDTH * HEIGHT);
-  out.fill(1); // default white (for the info strip area)
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      const oldPixel = buf[idx];
-      const newPixel = oldPixel < 128 ? 0 : 255;
-      const err = oldPixel - newPixel;
-
-      // Write to output buffer (map 0→0 black, 255→1 white)
-      out[y * WIDTH + x] = newPixel === 0 ? 0 : 1;
-
-      // Distribute error to neighbors
-      if (x + 1 < width) buf[idx + 1] += err * (7 / 16);
-      if (y + 1 < height) {
-        if (x > 0) buf[idx + width - 1] += err * (3 / 16);
-        buf[idx + width] += err * (5 / 16);
-        if (x + 1 < width) buf[idx + width + 1] += err * (1 / 16);
-      }
-    }
-  }
-
-  return out;
 }
 
 // --- Bilinear resize (grayscale) ---
@@ -169,48 +90,107 @@ function resizeGray(
   return dst;
 }
 
-// --- Decorative elements ---
+// --- Text overlay ---
 
-function drawRule(buf: Uint8Array, y: number, xStart: number, xEnd: number): void {
-  for (let x = xStart; x < xEnd; x++) {
-    if ((x + y) % 2 === 0) buf[y * WIDTH + x] = 0;
-    buf[(y + 1) * WIDTH + x] = 0;
-    buf[(y + 2) * WIDTH + x] = 0;
-    if ((x + y) % 2 === 0) buf[(y + 3) * WIDTH + x] = 0;
+const TEXT_SCALE = 2;       // 16px tall text
+const TEXT_MARGIN = 12;     // margin from edges
+const TEXT_PAD_X = 4;       // horizontal padding around text
+const TEXT_PAD_Y = 2;       // vertical padding around text
+const TEXT_HEIGHT = 8 * TEXT_SCALE; // 16px
+
+/**
+ * Draw white text with a black backing rectangle for readability.
+ */
+function drawTextWithBacking(
+  buf: Uint8Array,
+  x: number,
+  y: number,
+  text: string,
+  scale: number
+): void {
+  const textW = measureText(text, scale);
+  const textH = 8 * scale;
+
+  // Draw black backing rectangle
+  for (let py = y - TEXT_PAD_Y; py < y + textH + TEXT_PAD_Y; py++) {
+    for (let px = x - TEXT_PAD_X; px < x + textW + TEXT_PAD_X; px++) {
+      if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
+        buf[py * WIDTH + px] = 0;
+      }
+    }
+  }
+
+  // Draw white text using font glyphs
+  const charWidth = 8 * scale;
+  const spacing = scale;
+
+  for (let i = 0; i < text.length; i++) {
+    const cx = x + i * (charWidth + spacing);
+    const code = text.charCodeAt(i);
+    const idx = code - 32;
+    if (idx < 0 || idx >= FONT_DATA.length) continue;
+    const glyph = FONT_DATA[idx];
+    for (let row = 0; row < 8; row++) {
+      const byte = glyph[row];
+      for (let col = 0; col < 8; col++) {
+        if (byte & (0x80 >> col)) {
+          for (let sy = 0; sy < scale; sy++) {
+            for (let sx = 0; sx < scale; sx++) {
+              const px = cx + col * scale + sx;
+              const py = y + row * scale + sy;
+              if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
+                buf[py * WIDTH + px] = 255;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
-// --- Text overlay at the bottom ---
-
-function drawInfoStrip(
+/**
+ * Overlay text on the image bottom in two lines:
+ *   Line 1 (upper): Title centered
+ *   Line 2 (lower): Location left, Date right
+ */
+function drawOverlayText(
   buf: Uint8Array,
   moment: MomentBeforeData,
   displayDate: string
 ): void {
-  const stripTop = IMAGE_HEIGHT;
+  const location = moment.location.length > 30
+    ? moment.location.slice(0, 27) + "..."
+    : moment.location;
+  const title = moment.title.length > 35
+    ? moment.title.slice(0, 32) + "..."
+    : moment.title;
+  const dateLine = `${displayDate}, ${moment.year}`;
 
-  // White fill for the info strip
-  for (let y = stripTop; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
-      buf[y * WIDTH + x] = 1;
-    }
+  const LINE_GAP = 4;
+  const bottomLineY = HEIGHT - TEXT_MARGIN - TEXT_HEIGHT;
+  const topLineY = bottomLineY - TEXT_HEIGHT - LINE_GAP - TEXT_PAD_Y * 2;
+
+  // Upper line: Title centered
+  if (title.length > 0) {
+    const titleW = measureText(title, TEXT_SCALE);
+    const titleX = Math.round((WIDTH - titleW) / 2);
+    drawTextWithBacking(buf, titleX, topLineY, title, TEXT_SCALE);
   }
 
-  // Decorative rule at the top of the strip
-  drawRule(buf, stripTop + 2, 40, WIDTH - 40);
+  // Lower line: Location left, Date right
+  drawTextWithBacking(buf, TEXT_MARGIN, bottomLineY, location, TEXT_SCALE);
+  const dateW = measureText(dateLine, TEXT_SCALE);
+  drawTextWithBacking(buf, WIDTH - TEXT_MARGIN - dateW, bottomLineY, dateLine, TEXT_SCALE);
+}
 
-  // "MOMENT BEFORE" — small centered label
-  drawTextCentered(buf, WIDTH, HEIGHT, stripTop + 10, "MOMENT BEFORE", 1, 40, WIDTH - 40);
+// --- Debug: return raw AI image before processing ---
 
-  // Date + Year — e.g. "February 14, 1912"
-  const dateLine = `${displayDate}, ${moment.year}`;
-  drawTextCentered(buf, WIDTH, HEIGHT, stripTop + 22, dateLine, 2, 40, WIDTH - 40);
-
-  // Location — e.g. "North Atlantic Ocean"
-  const location = moment.location.length > 50
-    ? moment.location.slice(0, 47) + "..."
-    : moment.location;
-  drawTextCentered(buf, WIDTH, HEIGHT, stripTop + 44, location, 2, 40, WIDTH - 40);
+export async function generateMomentImageRaw(
+  env: Env,
+  moment: MomentBeforeData,
+): Promise<Uint8Array> {
+  return generateAIImage(env, moment.imagePrompt);
 }
 
 // --- Main entry point ---
@@ -220,7 +200,7 @@ export async function generateMomentImage(
   moment: MomentBeforeData,
   displayDate: string
 ): Promise<Uint8Array> {
-  // 1. Generate woodcut image via AI (returns JPEG)
+  // 1. Generate image via AI (returns JPEG)
   const jpegBytes = await generateAIImage(env, moment.imagePrompt);
 
   // 2. Convert JPEG → PNG via Cloudflare Images binding
@@ -230,20 +210,17 @@ export async function generateMomentImage(
   // 3. Decode PNG to grayscale
   const decoded = await decodePNG(pngBytes);
 
-  // 4. Resize to 800 × IMAGE_HEIGHT if needed
+  // 4. Resize to 800 × 480 if needed
   let gray: Uint8Array;
-  if (decoded.width === WIDTH && decoded.height === IMAGE_HEIGHT) {
+  if (decoded.width === WIDTH && decoded.height === HEIGHT) {
     gray = decoded.gray;
   } else {
-    gray = resizeGray(decoded.gray, decoded.width, decoded.height, WIDTH, IMAGE_HEIGHT);
+    gray = resizeGray(decoded.gray, decoded.width, decoded.height, WIDTH, HEIGHT);
   }
 
-  // 5. Floyd-Steinberg dither → 1-bit (writes into full 800×480 buffer)
-  const buf = floydSteinberg(gray, WIDTH, IMAGE_HEIGHT);
+  // 5. Overlay location and date
+  drawOverlayText(gray, moment, displayDate);
 
-  // 6. Draw the info strip (date, year, location) in the bottom 64px
-  drawInfoStrip(buf, moment, displayDate);
-
-  // 7. Encode as 1-bit PNG
-  return encodePNG1Bit(buf, WIDTH, HEIGHT);
+  // 6. Encode as 8-bit grayscale PNG
+  return encodePNGGray8(gray, WIDTH, HEIGHT);
 }
