@@ -151,7 +151,7 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   const month = parts.find((p) => p.type === "month")!.value;
   const day = parts.find((p) => p.type === "day")!.value;
   const dateStr = `${year}-${month}-${day}`;
-  const cacheKey = `fact1:v3:${dateStr}`;
+  const cacheKey = `fact1:v5:${dateStr}`;
 
   // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
@@ -236,7 +236,7 @@ async function handleScheduled(env: Env): Promise<void> {
     for (let i = 0; i < png1.length; i += CRON_CHUNK) {
       bin1 += String.fromCharCode(...png1.subarray(i, i + CRON_CHUNK));
     }
-    await env.CACHE.put(`fact1:v3:${dateStr}`, btoa(bin1));
+    await env.CACHE.put(`fact1:v5:${dateStr}`, btoa(bin1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 2. Also cache the fact.json for backward compatibility

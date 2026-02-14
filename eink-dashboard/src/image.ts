@@ -32,7 +32,6 @@ const SDXL_HEIGHT = 768;
 // ====================================================================
 const FACT1_STEPS = 20;       // Workers AI max
 const FACT1_GUIDANCE = 6.5;
-const FACT1_USE_MEDIAN = false; // toggle: median filter before threshold
 
 // --- AI image generation (SDXL) ---
 
@@ -336,101 +335,35 @@ function quantize4Level(gray: Uint8Array): void {
   }
 }
 
-// --- 3x3 median filter: removes grid/banding artifacts, preserves real edges ---
+// --- 8×8 Bayer ordered dithering: stable dotted tonal texture for e-ink ---
 
-function medianFilter3x3(gray: Uint8Array, w: number, h: number): void {
-  const src = new Uint8Array(gray);
-  const buf = new Uint8Array(9);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      let k = 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          buf[k++] = src[(y + dy) * w + (x + dx)];
-        }
-      }
-      // Insertion sort for 9 elements
-      for (let i = 1; i < 9; i++) {
-        const v = buf[i];
-        let j = i - 1;
-        while (j >= 0 && buf[j] > v) { buf[j + 1] = buf[j]; j--; }
-        buf[j + 1] = v;
-      }
-      gray[y * w + x] = buf[4]; // median
+const FACT1_DITHER_MODE = "bayer8";
+
+// Classic 8×8 Bayer threshold matrix (values 0–63)
+const BAYER8 = [
+   0, 32,  8, 40,  2, 34, 10, 42,
+  48, 16, 56, 24, 50, 18, 58, 26,
+  12, 44,  4, 36, 14, 46,  6, 38,
+  60, 28, 52, 20, 62, 30, 54, 22,
+   3, 35, 11, 43,  1, 33,  9, 41,
+  51, 19, 59, 27, 49, 17, 57, 25,
+  15, 47,  7, 39, 13, 45,  5, 37,
+  63, 31, 55, 23, 61, 29, 53, 21,
+];
+
+// Pre-compute normalized thresholds (0–255 range)
+const BAYER8_NORM = BAYER8.map(v => (v / 64) * 255);
+
+function bayerDither8x8(gray: Uint8Array, w: number, h: number): Uint8Array {
+  const bits = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = (y & 7) << 3; // (y % 8) * 8
+    for (let x = 0; x < w; x++) {
+      const threshold = BAYER8_NORM[row + (x & 7)];
+      bits[y * w + x] = gray[y * w + x] > threshold ? 1 : 0;
     }
   }
-}
-
-// --- Auto-threshold: target blackRatio 0.12–0.28, adjust ±10, max 3 tries ---
-
-function autoThreshold(gray: Uint8Array, startThresh: number = 200): { bits: Uint8Array; threshold: number; blackRatio: number } {
-  const total = gray.length;
-  const TARGET_LOW = 0.12;
-  const TARGET_HIGH = 0.28;
-  let thresh = startThresh;
-
-  for (let iter = 0; iter < 8; iter++) {
-    let blackCount = 0;
-    for (let i = 0; i < total; i++) {
-      if (gray[i] < thresh) blackCount++;
-    }
-    const ratio = blackCount / total;
-
-    if (ratio >= TARGET_LOW && ratio <= TARGET_HIGH) {
-      // Good range — produce final bits
-      const bits = new Uint8Array(total);
-      for (let i = 0; i < total; i++) {
-        bits[i] = gray[i] < thresh ? 0 : 1;
-      }
-      return { bits, threshold: thresh, blackRatio: ratio };
-    }
-
-    // gray[i] < thresh → black, so:
-    // Too dark → LOWER threshold (fewer pixels qualify as black)
-    // Too light → RAISE threshold (more pixels qualify as black)
-    // Step proportional to how far off we are
-    if (ratio > TARGET_HIGH) {
-      thresh -= Math.max(10, Math.round((ratio - TARGET_HIGH) * 200));
-    } else {
-      thresh += Math.max(10, Math.round((TARGET_LOW - ratio) * 200));
-    }
-
-    // Clamp
-    if (thresh < 80) thresh = 80;
-    if (thresh > 250) thresh = 250;
-  }
-
-  // After 3 iterations, use whatever we have
-  let blackCount = 0;
-  const bits = new Uint8Array(total);
-  for (let i = 0; i < total; i++) {
-    if (gray[i] < thresh) { bits[i] = 0; blackCount++; }
-    else { bits[i] = 1; }
-  }
-  return { bits, threshold: thresh, blackRatio: blackCount / total };
-}
-
-// --- Symmetric despeckle: remove isolated black pixels AND white holes ---
-
-function despeckle1Bit(pixels01: Uint8Array, w: number, h: number): void {
-  const copy = new Uint8Array(pixels01);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      const val = copy[i];
-      let blackNeighbors = 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          if (copy[(y + dy) * w + (x + dx)] === 0) blackNeighbors++;
-        }
-      }
-      // Isolated black pixel (<=1 black neighbor) → flip to white
-      if (val === 0 && blackNeighbors <= 1) pixels01[i] = 1;
-      // Isolated white hole (>=7 black neighbors) → fill black
-      if (val === 1 && blackNeighbors >= 7) pixels01[i] = 0;
-    }
-  }
+  return bits;
 }
 
 // --- Common: AI model → grayscale → crop → resize ---
@@ -477,30 +410,24 @@ export async function generateMomentImage(
   return encodePNGGray8(gray, WIDTH, HEIGHT);
 }
 
-// --- Pipeline B: Artist-interpretation 1-bit (/fact1.png) ---
-// Style-injected prompt → SDXL → grayscale → auto-threshold → despeckle → 1-bit.
+// --- Pipeline B: 1-bit Bayer dithered (/fact1.png) ---
+// Same image generation as 4-level → tone adjust → 8×8 Bayer dithering → caption.
 
 export async function generateMomentImage1Bit(
   env: Env,
   moment: MomentBeforeData,
   displayDate: string,
 ): Promise<Uint8Array> {
-  // 1. Generate → grayscale → crop → resize (same woodcut prompt as 4-level)
+  // 1. Generate → grayscale → crop → resize (same prompt as 4-level)
   const gray = await generateAndDecodeGray(env, moment.imagePrompt, FACT1_STEPS, FACT1_GUIDANCE);
 
-  // 4. Optional median filter (behind flag)
-  if (FACT1_USE_MEDIAN) {
-    medianFilter3x3(gray, WIDTH, HEIGHT);
-  }
+  // 2. Tone adjustment to preserve midtones for dithering
+  applyToneCurve(gray, 1.20, 0.92);
 
-  // 5. Auto-threshold to target blackRatio 0.12–0.28
-  const { bits, threshold, blackRatio } = autoThreshold(gray);
-  console.log(`fact1.png: threshold=${threshold}, blackRatio=${(blackRatio * 100).toFixed(1)}%`);
+  // 3. 8×8 Bayer ordered dithering → 1-bit
+  const bits = bayerDither8x8(gray, WIDTH, HEIGHT);
 
-  // 6. Symmetric despeckle (isolated pixels + white holes)
-  despeckle1Bit(bits, WIDTH, HEIGHT);
-
-  // 7. Elegant white strip caption (drawn AFTER threshold into 1-bit buffer)
+  // 4. Caption drawn AFTER dithering so text stays crisp
   drawOverlayText1Bit(bits, moment, displayDate);
 
   return encodePNG1Bit(bits, WIDTH, HEIGHT);
