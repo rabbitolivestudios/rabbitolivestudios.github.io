@@ -14,7 +14,7 @@ const OPEN_METEO_URL =
   `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset` +
   `&timezone=America%2FChicago` +
   `&forecast_days=5` +
-  `&forecast_hours=12`;
+  `&forecast_hours=24`;
 
 export async function getWeather(env: Env): Promise<WeatherResponse> {
   // Check cache
@@ -53,7 +53,7 @@ function normalize(raw: any): WeatherResponse {
   const chicagoNow = new Date(now);
 
   const hourly12h: HourlyEntry[] = [];
-  const hourlyLen = Math.min(hourly.time.length, 12);
+  const hourlyLen = Math.min(hourly.time.length, 24);
   for (let i = 0; i < hourlyLen; i++) {
     const info = getWeatherInfo(hourly.weather_code[i]);
     hourly12h.push({
