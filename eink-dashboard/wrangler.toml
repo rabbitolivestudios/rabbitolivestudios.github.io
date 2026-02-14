@@ -7,7 +7,7 @@ compatibility_date = "2024-09-23"
 # Then replace YOUR_NAMESPACE_ID with the id from the output.
 [[kv_namespaces]]
 binding = "CACHE"
-id = "YOUR_NAMESPACE_ID"
+id = "de97776d35af4df08b13fd2158acebdc"
 
 # Cloudflare Workers AI (image generation + LLM)
 [ai]
