@@ -42,10 +42,9 @@ This document records the key decisions made during development of the "Moment B
 
 **Prompt engineering:**
 - Must include "no pens, no pencils, no drawing tools, no art supplies, no hands" — FLUX-2 sometimes draws the drawing tools in the scene
-- "Plenty of white space, airy composition, avoid large solid black areas" — without this, FLUX-2-dev produces overly dense images that look muddy on e-ink
-- "Delicate cross-hatching" and "thin precise lines" — lighter than "fine line work" alone
-- "Filling the entire frame edge to edge" — prevents wasted white margins around the subject
-- Earlier version used "no gray wash, no shading gradients" which pushed toward heavy black fills — removed in favor of the lighter approach
+- "Clean white background showing through" prevents muddy gray fills
+- "No gray wash, no shading gradients" forces cross-hatching instead of smooth tones
+- We tried a lighter style ("plenty of white space, delicate cross-hatching, avoid large solid black areas") but it looked too faint on the actual e-ink display — the bold original style with solid blacks reads much better
 
 ---
 
