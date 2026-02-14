@@ -41,6 +41,38 @@ function getTodayChicago(): { dateStr: string; displayDate: string; month: strin
   };
 }
 
+/**
+ * Fetch all raw "on this day" events from Wikipedia.
+ * Used by the Moment Before engine to pick the most visual event via LLM.
+ */
+export async function getTodayEvents(env: Env): Promise<{
+  events: Array<{ year: number; text: string }>;
+  dateStr: string;
+  displayDate: string;
+}> {
+  const { dateStr, displayDate, month, day } = getTodayChicago();
+
+  try {
+    const url = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${month}/${day}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker; contact: rabbitolivestudios@gmail.com)" },
+    });
+
+    if (!res.ok) throw new Error(`Wikipedia returned ${res.status}`);
+
+    const data: any = await res.json();
+    const rawEvents: any[] = data.events ?? [];
+
+    const events = rawEvents
+      .filter((e: any) => e.year && e.text)
+      .map((e: any) => ({ year: e.year as number, text: cleanText(e.text) }));
+
+    return { events, dateStr, displayDate };
+  } catch {
+    return { events: [], dateStr, displayDate };
+  }
+}
+
 export async function getFact(env: Env): Promise<FactResponse> {
   const { dateStr, displayDate, month, day } = getTodayChicago();
   const cacheKey = `fact:${dateStr}`;

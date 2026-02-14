@@ -1,5 +1,15 @@
 export interface Env {
   CACHE: KVNamespace;
+  AI: Ai;
+}
+
+// --- Moment Before types ---
+
+export interface MomentBeforeData {
+  year: number;
+  location: string;
+  scene: string;
+  imagePrompt: string;
 }
 
 // --- Weather types ---

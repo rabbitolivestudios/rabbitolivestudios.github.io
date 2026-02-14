@@ -1,9 +1,10 @@
-import type { Env, CachedValue, FactResponse } from "./types";
+import type { Env } from "./types";
 import { getWeather } from "./weather";
-import { getFact } from "./fact";
-import { generateFactImage } from "./image";
+import { getFact, getTodayEvents } from "./fact";
+import { generateMomentImage } from "./image";
+import { generateMomentBefore } from "./moment";
 
-const VERSION = "1.0.0";
+const VERSION = "2.0.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -70,8 +71,16 @@ async function handleFact(env: Env): Promise<Response> {
   }
 }
 
+/**
+ * Generate the "Moment Before" image.
+ *
+ * Pipeline:
+ *   Wikipedia events → LLM picks event + scene → AI image gen → dither → 1-bit PNG
+ *
+ * Cached in KV for 24 hours per date.
+ */
 async function handleFactImage(env: Env): Promise<Response> {
-  // Check KV cache for today's image
+  // Determine today's cache key
   const now = new Date();
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Chicago",
@@ -86,7 +95,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   const dateStr = `${year}-${month}-${day}`;
   const cacheKey = `factpng:${dateStr}`;
 
-  // Try to get cached PNG (stored as base64 string)
+  // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
     const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
@@ -99,10 +108,9 @@ async function handleFactImage(env: Env): Promise<Response> {
     });
   }
 
-  // Cache miss: generate on-demand
+  // Cache miss — run the full Moment Before pipeline
   try {
-    const fact = await getFact(env);
-    const png = await generateFactImage(fact);
+    const png = await generateMomentPNG(env);
 
     // Store in KV as base64
     const b64 = btoa(String.fromCharCode(...png));
@@ -116,9 +124,23 @@ async function handleFactImage(env: Env): Promise<Response> {
       },
     });
   } catch (err) {
-    console.error("Fact image error:", err);
+    console.error("Moment Before image error:", err);
     return new Response("Failed to generate image", { status: 503 });
   }
+}
+
+/**
+ * Full pipeline: Wikipedia → LLM → Image AI → dither → 1-bit PNG
+ */
+async function generateMomentPNG(env: Env): Promise<Uint8Array> {
+  // 1. Get today's events from Wikipedia
+  const { events, displayDate } = await getTodayEvents(env);
+
+  // 2. LLM picks event and generates scene + image prompt
+  const moment = await generateMomentBefore(env, events);
+
+  // 3. Generate the image (AI + dither + text overlay + encode)
+  return generateMomentImage(env, moment, displayDate);
 }
 
 function handleHealth(): Response {
@@ -127,6 +149,7 @@ function handleHealth(): Response {
       status: "ok",
       version: VERSION,
       worker: "eink-dashboard",
+      concept: "Moment Before",
       timestamp: new Date().toISOString(),
     },
     200,
@@ -137,21 +160,27 @@ function handleHealth(): Response {
 // --- Scheduled handler (Cron) ---
 
 async function handleScheduled(env: Env): Promise<void> {
-  console.log("Cron: starting daily refresh");
+  console.log("Cron: starting daily Moment Before refresh");
 
   try {
-    // 1. Refresh fact cache
-    const fact = await getFact(env);
-    console.log(`Cron: cached fact for ${fact.date}`);
+    // 1. Generate and cache today's Moment Before image
+    const { events, dateStr, displayDate } = await getTodayEvents(env);
+    console.log(`Cron: fetched ${events.length} events for ${dateStr}`);
 
-    // 2. Pre-render and cache the fact image
-    const png = await generateFactImage(fact);
+    const moment = await generateMomentBefore(env, events);
+    console.log(`Cron: LLM picked ${moment.year}, ${moment.location}`);
+
+    const png = await generateMomentImage(env, moment, displayDate);
     const b64 = btoa(String.fromCharCode(...png));
-    const cacheKey = `factpng:${fact.date}`;
+    const cacheKey = `factpng:${dateStr}`;
     await env.CACHE.put(cacheKey, b64);
-    console.log(`Cron: cached fact.png for ${fact.date} (${png.length} bytes)`);
+    console.log(`Cron: cached Moment Before image for ${dateStr} (${png.length} bytes)`);
 
-    // 3. Optionally warm weather cache
+    // 2. Also cache the fact.json for backward compatibility
+    await getFact(env);
+    console.log(`Cron: cached fact.json for ${dateStr}`);
+
+    // 3. Warm weather cache
     await getWeather(env);
     console.log("Cron: warmed weather cache");
   } catch (err) {
