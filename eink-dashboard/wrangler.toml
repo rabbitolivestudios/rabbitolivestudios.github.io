@@ -1,0 +1,14 @@
+name = "eink-dashboard"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# KV Namespace — after creating, paste your namespace ID below.
+# Run: npx wrangler kv namespace create CACHE
+# Then replace YOUR_NAMESPACE_ID with the id from the output.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_NAMESPACE_ID"
+
+# Daily cron at 12:00 UTC = 06:00 CST (America/Chicago)
+[triggers]
+crons = ["0 12 * * *"]
