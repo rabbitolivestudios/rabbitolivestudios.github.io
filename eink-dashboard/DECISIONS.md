@@ -183,7 +183,28 @@ const b64 = btoa(binary);
 
 ---
 
-## 10. What We Didn't Do (and why)
+## 10. HTML Endpoints for SenseCraft HMI
+
+### Decision: Server-rendered HTML pages with inline SVG icons
+
+The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a URL onto the e-ink display. We added `/weather` and `/fact` HTML endpoints optimized for this.
+
+**Tried:**
+| Approach | Result |
+|----------|--------|
+| Emoji weather icons | ESP32-S3's renderer doesn't support emoji — blank spaces |
+| Gray text (#333, #444) for secondary info | Too faint on e-ink — nearly invisible |
+| `new Date()` to parse Open-Meteo times | Open-Meteo returns Chicago-local times; `new Date()` treats them as UTC, shifting hours by -6 |
+
+**Lessons learned:**
+- **No emoji** — the ESP32-S3 screenshot renderer lacks emoji font support. Use inline SVG or plain text.
+- **Pure black only** — all text and borders must be `#000`. Any gray lighter than ~#222 disappears on e-ink.
+- **Parse local times as strings** — Open-Meteo returns times in the requested timezone (Chicago). Parsing with `new Date("2026-02-14T02:00")` interprets it as UTC, causing a 6-hour offset. Instead, extract the hour directly from the ISO string.
+- **Request 24h of hourly data** — `forecast_hours=12` returns 12 hours from start of day, not from "now". With only 12 hours, late-night requests have no future hours to show.
+
+---
+
+## 11. What We Didn't Do (and why)
 
 | Consideration | Decision | Reason |
 |---------------|----------|--------|
