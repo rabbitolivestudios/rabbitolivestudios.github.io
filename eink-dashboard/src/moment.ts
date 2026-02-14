@@ -25,15 +25,17 @@ Your job:
 3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
    Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
 4. Extract the geographic location where the event took place.
-5. Write an image-generation prompt for a BLACK INK PEN ILLUSTRATION of that scene.
-   The prompt MUST specify: black ink pen editorial illustration on white paper, fine line work with
-   cross-hatching for shadows, clean white background showing through, high contrast black and white,
-   no gray wash, no shading gradients, all shadows rendered as cross-hatched ink lines,
+5. Write an image-generation prompt for an illustration of that scene.
+   The prompt MUST specify: 1960s newspaper editorial illustration, woodcut etching scratchboard style,
+   bold ink strokes with solid blacks, high contrast black and white,
+   deliberate cross-hatching with larger strokes for shading, avoid ultra-fine stippling,
+   avoid smooth gradients and minimal mid-gray wash, must convert cleanly to 1-bit e-ink,
+   avoid repetitive horizontal hatching patterns,
    detailed realistic drawing, cinematic composition, no text or lettering,
    no pens, no pencils, no drawing tools, no art supplies, no hands.
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
-{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Clean white background, high contrast black and white, all shadows rendered as cross-hatched ink lines. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
+{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"1960s newspaper editorial illustration, woodcut etching scratchboard style. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -144,9 +146,9 @@ function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeD
     title: "",
     scene: event.text,
     imagePrompt:
-      `Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. ` +
+      `1960s newspaper editorial illustration, woodcut etching scratchboard style. ` +
       `A dramatic historical scene from ${event.year}. ` +
-      `Clean white background, high contrast black and white, cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
+      `Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
   };
 }
 
@@ -157,9 +159,9 @@ function fallback(): MomentBeforeData {
     title: "Apollo 11 Launch",
     scene: "A towering rocket stands on the launch pad, wreathed in vapor, under a pale dawn sky.",
     imagePrompt:
-      "Black ink pen editorial illustration on white paper, fine line work with cross-hatching for shadows. " +
+      "1960s newspaper editorial illustration, woodcut etching scratchboard style. " +
       "A towering Saturn V rocket standing on a launch pad at dawn, " +
       "wreathed in wisps of vapor, with flat Florida marshland stretching to the horizon. " +
-      "Clean white background, high contrast black and white, cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
+      "Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
   };
 }

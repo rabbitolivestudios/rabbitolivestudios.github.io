@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
-import { generateMomentImage, generateMomentImageRaw } from "./image";
+import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
 import { generateMomentBefore } from "./moment";
 import { handleWeatherPage } from "./pages/weather";
 import { handleFactPage } from "./pages/fact";
@@ -95,7 +95,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   const month = parts.find((p) => p.type === "month")!.value;
   const day = parts.find((p) => p.type === "day")!.value;
   const dateStr = `${year}-${month}-${day}`;
-  const cacheKey = `factpng:v9:${dateStr}`;
+  const cacheKey = `factpng_sdxl:v1:${dateStr}`;
 
   // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
@@ -132,6 +132,65 @@ async function handleFactImage(env: Env): Promise<Response> {
     });
   } catch (err) {
     console.error("Moment Before image error:", err);
+    return new Response("Failed to generate image", { status: 503 });
+  }
+}
+
+/**
+ * Generate the 1-bit dithered "Moment Before" image for mono e-ink displays.
+ * Cached separately from the grayscale version.
+ */
+async function handleFact1BitImage(env: Env): Promise<Response> {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = fmt.formatToParts(now);
+  const year = parts.find((p) => p.type === "year")!.value;
+  const month = parts.find((p) => p.type === "month")!.value;
+  const day = parts.find((p) => p.type === "day")!.value;
+  const dateStr = `${year}-${month}-${day}`;
+  const cacheKey = `fact1png_sdxl:v1:${dateStr}`;
+
+  // Try KV cache first
+  const cachedB64 = await env.CACHE.get(cacheKey);
+  if (cachedB64) {
+    const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
+    return new Response(binary, {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  // Cache miss — run the full pipeline with 1-bit dithering
+  try {
+    const { events, displayDate } = await getTodayEvents(env);
+    const moment = await generateMomentBefore(env, events);
+    const png = await generateMomentImage1Bit(env, moment, displayDate);
+
+    // Store in KV as base64
+    let binary = "";
+    const CHUNK = 8192;
+    for (let i = 0; i < png.length; i += CHUNK) {
+      binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
+    }
+    await env.CACHE.put(cacheKey, btoa(binary));
+
+    return new Response(png, {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (err) {
+    console.error("1-bit Moment Before image error:", err);
     return new Response("Failed to generate image", { status: 503 });
   }
 }
@@ -181,6 +240,7 @@ async function handleScheduled(env: Env): Promise<void> {
     const moment = await generateMomentBefore(env, events);
     console.log(`Cron: LLM picked ${moment.year}, ${moment.location}`);
 
+    // Generate and cache 8-bit grayscale image
     const png = await generateMomentImage(env, moment, displayDate);
     let cronBinary = "";
     const CRON_CHUNK = 8192;
@@ -188,9 +248,19 @@ async function handleScheduled(env: Env): Promise<void> {
       cronBinary += String.fromCharCode(...png.subarray(i, i + CRON_CHUNK));
     }
     const b64 = btoa(cronBinary);
-    const cacheKey = `factpng:v9:${dateStr}`;
+    const cacheKey = `factpng_sdxl:v1:${dateStr}`;
     await env.CACHE.put(cacheKey, b64);
-    console.log(`Cron: cached Moment Before image for ${dateStr} (${png.length} bytes)`);
+    console.log(`Cron: cached grayscale image for ${dateStr} (${png.length} bytes)`);
+
+    // Generate and cache 1-bit dithered image
+    const png1 = await generateMomentImage1Bit(env, moment, displayDate);
+    let cron1Binary = "";
+    for (let i = 0; i < png1.length; i += CRON_CHUNK) {
+      cron1Binary += String.fromCharCode(...png1.subarray(i, i + CRON_CHUNK));
+    }
+    const cache1Key = `fact1png_sdxl:v1:${dateStr}`;
+    await env.CACHE.put(cache1Key, btoa(cron1Binary));
+    console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 2. Also cache the fact.json for backward compatibility
     await getFact(env);
@@ -237,6 +307,8 @@ export default {
         return handleFact(env);
       case "/fact.png":
         return handleFactImage(env);
+      case "/fact1.png":
+        return handleFact1BitImage(env);
       case "/fact-raw.jpg": {
         const { events, displayDate } = await getTodayEvents(env);
         const moment = await generateMomentBefore(env, events);
@@ -275,7 +347,7 @@ export default {
         return jsonResponse(
           {
             error: "Not found",
-            endpoints: ["/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/health"],
+            endpoints: ["/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/health"],
           },
           404,
           0
