@@ -14,7 +14,9 @@ import type { Env, MomentBeforeData } from "./types";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
-const SYSTEM_PROMPT = `You are "Moment Before" — a creative mind that imagines the scene just BEFORE a famous historical event.
+export type PromptStyle = "4level" | "1bit";
+
+const SYSTEM_PROMPT_BASE = `You are "Moment Before" — a creative mind that imagines the scene just BEFORE a famous historical event.
 
 You will receive a numbered list of events that happened on today's date in history.
 
@@ -25,17 +27,41 @@ Your job:
 3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
    Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
 4. Extract the geographic location where the event took place.
-5. Write an image-generation prompt for an illustration of that scene.
-   The prompt MUST specify: 1960s newspaper editorial illustration, woodcut etching scratchboard style,
-   bold ink strokes with solid blacks, high contrast black and white,
-   deliberate cross-hatching with larger strokes for shading, avoid ultra-fine stippling,
-   avoid smooth gradients and minimal mid-gray wash, must convert cleanly to 1-bit e-ink,
-   avoid repetitive horizontal hatching patterns,
-   detailed realistic drawing, cinematic composition, no text or lettering,
-   no pens, no pencils, no drawing tools, no art supplies, no hands.
+5. Write an image-generation prompt for an illustration of that scene.`;
+
+const STYLE_4LEVEL = `
+   The prompt MUST specify: hand-carved woodcut print, linocut relief print,
+   vintage newspaper woodcut illustration,
+   visible U-gouge and V-gouge carving marks,
+   sweeping curved gouge strokes (not straight line hatching),
+   raised inked ridges (peaks) and carved channels (valleys),
+   large solid black ink areas with minimal midtones,
+   two to three tonal regions only,
+   simple background with strong silhouette separation.
+   AVOID: stippling, halftone dots, fine crosshatching, pencil shading,
+   airbrush gradients, repetitive horizontal line-banding in the sky, photorealism.
+   Cinematic composition, no text or lettering,
+   no pens, no pencils, no drawing tools, no art supplies, no hands.`;
+
+const STYLE_1BIT = `
+   For the prompt, describe ONLY the scene content — what to draw, the setting,
+   the architecture, the people, the objects, the mood. Do NOT include any art
+   style keywords (no "woodcut", "ink", "sketch", etc.) — the rendering style
+   will be applied separately.
+   The scene should be specific and recognizable, with clear architectural or
+   environmental landmarks that identify the location. Describe physical details:
+   buildings, vehicles, landscape features, sky conditions.
+   Cinematic wide-angle composition. No text or lettering.
+   No pens, no pencils, no drawing tools, no art supplies, no hands.`;
+
+const JSON_EXAMPLE = `
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
-{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"1960s newspaper editorial illustration, woodcut etching scratchboard style. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
+{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"1960s newspaper editorial illustration, woodcut etching scratchboard style. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. High contrast black and white, clean hatching detail. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
+
+function getSystemPrompt(style: PromptStyle): string {
+  return SYSTEM_PROMPT_BASE + (style === "4level" ? STYLE_4LEVEL : STYLE_1BIT) + JSON_EXAMPLE;
+}
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -100,7 +126,8 @@ function validateMoment(obj: any): MomentBeforeData | null {
  */
 export async function generateMomentBefore(
   env: Env,
-  events: Array<{ year: number; text: string }>
+  events: Array<{ year: number; text: string }>,
+  style: PromptStyle = "4level"
 ): Promise<MomentBeforeData> {
   if (events.length === 0) {
     return fallback();
@@ -116,7 +143,7 @@ export async function generateMomentBefore(
   try {
     const response: any = await env.AI.run(LLM_MODEL, {
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt(style) },
         { role: "user", content: userMessage },
       ],
       max_tokens: 600,
@@ -136,10 +163,16 @@ export async function generateMomentBefore(
   }
 
   // Fallback: pick the first event and build a generic prompt
-  return fallbackFromEvent(capped[0]);
+  return fallbackFromEvent(capped[0], style);
 }
 
-function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeData {
+function fallbackStyle(style: PromptStyle): string {
+  return style === "4level"
+    ? "High contrast with gentle midtones, clean hatching detail, smooth grayscale shading allowed."
+    : "A dramatic historical scene, cinematic wide-angle composition.";
+}
+
+function fallbackFromEvent(event: { year: number; text: string }, style: PromptStyle): MomentBeforeData {
   return {
     year: event.year,
     location: "Unknown",
@@ -148,7 +181,7 @@ function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeD
     imagePrompt:
       `1960s newspaper editorial illustration, woodcut etching scratchboard style. ` +
       `A dramatic historical scene from ${event.year}. ` +
-      `Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
+      `${fallbackStyle(style)} Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
   };
 }
 
@@ -162,6 +195,6 @@ function fallback(): MomentBeforeData {
       "1960s newspaper editorial illustration, woodcut etching scratchboard style. " +
       "A towering Saturn V rocket standing on a launch pad at dawn, " +
       "wreathed in wisps of vapor, with flat Florida marshland stretching to the horizon. " +
-      "Bold ink strokes with solid blacks, high contrast black and white, deliberate cross-hatching for shading, no smooth gradients. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
+      "High contrast with gentle midtones, clean hatching detail. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
   };
 }

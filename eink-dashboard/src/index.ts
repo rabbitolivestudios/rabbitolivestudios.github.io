@@ -2,7 +2,7 @@ import type { Env } from "./types";
 import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
-import { generateMomentBefore } from "./moment";
+import { generateMomentBefore, type PromptStyle } from "./moment";
 import { handleWeatherPage } from "./pages/weather";
 import { handleFactPage } from "./pages/fact";
 
@@ -74,11 +74,7 @@ async function handleFact(env: Env): Promise<Response> {
 }
 
 /**
- * Generate the "Moment Before" image.
- *
- * Pipeline:
- *   Wikipedia events → LLM picks event + scene → AI image gen → dither → 1-bit PNG
- *
+ * Generate the "Moment Before" 4-level grayscale image.
  * Cached in KV for 24 hours per date.
  */
 async function handleFactImage(env: Env): Promise<Response> {
@@ -95,7 +91,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   const month = parts.find((p) => p.type === "month")!.value;
   const day = parts.find((p) => p.type === "day")!.value;
   const dateStr = `${year}-${month}-${day}`;
-  const cacheKey = `factpng_sdxl:v1:${dateStr}`;
+  const cacheKey = `fact4:v2:${dateStr}`;
 
   // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
@@ -110,9 +106,11 @@ async function handleFactImage(env: Env): Promise<Response> {
     });
   }
 
-  // Cache miss — run the full Moment Before pipeline
+  // Cache miss — run the 4-level pipeline
   try {
-    const png = await generateMomentPNG(env);
+    const { events, displayDate } = await getTodayEvents(env);
+    const moment = await generateMomentBefore(env, events, "4level");
+    const png = await generateMomentImage(env, moment, displayDate);
 
     // Store in KV as base64 (chunk to avoid stack overflow)
     let binary = "";
@@ -153,7 +151,7 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   const month = parts.find((p) => p.type === "month")!.value;
   const day = parts.find((p) => p.type === "day")!.value;
   const dateStr = `${year}-${month}-${day}`;
-  const cacheKey = `fact1png_sdxl:v1:${dateStr}`;
+  const cacheKey = `fact1:v3:${dateStr}`;
 
   // Try KV cache first
   const cachedB64 = await env.CACHE.get(cacheKey);
@@ -170,9 +168,9 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
 
   // Cache miss — run the full pipeline with 1-bit dithering
   try {
-    const { events, displayDate } = await getTodayEvents(env);
-    const moment = await generateMomentBefore(env, events);
-    const png = await generateMomentImage1Bit(env, moment, displayDate);
+    const { events, dateStr: ds, displayDate } = await getTodayEvents(env);
+    const moment = await generateMomentBefore(env, events, "4level");
+    const png = await generateMomentImage1Bit(env, moment, displayDate, ds);
 
     // Store in KV as base64
     let binary = "";
@@ -195,24 +193,6 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   }
 }
 
-/**
- * Full pipeline: Wikipedia → LLM → Image AI → dither → 1-bit PNG
- */
-async function generateMomentPNG(env: Env): Promise<Uint8Array> {
-  // 1. Get today's events from Wikipedia
-  const { events, displayDate } = await getTodayEvents(env);
-  console.log(`Pipeline: fetched ${events.length} events for ${displayDate}`);
-
-  // 2. LLM picks event and generates scene + image prompt
-  const moment = await generateMomentBefore(env, events);
-  console.log(`Pipeline: LLM picked ${moment.year}, ${moment.location}`);
-
-  // 3. Generate the image (AI + dither + text overlay + encode)
-  const png = await generateMomentImage(env, moment, displayDate);
-  console.log(`Pipeline: generated ${png.length} byte PNG`);
-  return png;
-}
-
 function handleHealth(): Response {
   return jsonResponse(
     {
@@ -233,33 +213,30 @@ async function handleScheduled(env: Env): Promise<void> {
   console.log("Cron: starting daily Moment Before refresh");
 
   try {
-    // 1. Generate and cache today's Moment Before image
     const { events, dateStr, displayDate } = await getTodayEvents(env);
     console.log(`Cron: fetched ${events.length} events for ${dateStr}`);
-
-    const moment = await generateMomentBefore(env, events);
-    console.log(`Cron: LLM picked ${moment.year}, ${moment.location}`);
-
-    // Generate and cache 8-bit grayscale image
-    const png = await generateMomentImage(env, moment, displayDate);
-    let cronBinary = "";
     const CRON_CHUNK = 8192;
-    for (let i = 0; i < png.length; i += CRON_CHUNK) {
-      cronBinary += String.fromCharCode(...png.subarray(i, i + CRON_CHUNK));
-    }
-    const b64 = btoa(cronBinary);
-    const cacheKey = `factpng_sdxl:v1:${dateStr}`;
-    await env.CACHE.put(cacheKey, b64);
-    console.log(`Cron: cached grayscale image for ${dateStr} (${png.length} bytes)`);
 
-    // Generate and cache 1-bit dithered image
-    const png1 = await generateMomentImage1Bit(env, moment, displayDate);
-    let cron1Binary = "";
-    for (let i = 0; i < png1.length; i += CRON_CHUNK) {
-      cron1Binary += String.fromCharCode(...png1.subarray(i, i + CRON_CHUNK));
+    // 1. Generate and cache 4-level grayscale image (own LLM call)
+    const moment4 = await generateMomentBefore(env, events, "4level");
+    console.log(`Cron 4-level: LLM picked ${moment4.year}, ${moment4.location}`);
+    const png4 = await generateMomentImage(env, moment4, displayDate);
+    let bin4 = "";
+    for (let i = 0; i < png4.length; i += CRON_CHUNK) {
+      bin4 += String.fromCharCode(...png4.subarray(i, i + CRON_CHUNK));
     }
-    const cache1Key = `fact1png_sdxl:v1:${dateStr}`;
-    await env.CACHE.put(cache1Key, btoa(cron1Binary));
+    await env.CACHE.put(`fact4:v2:${dateStr}`, btoa(bin4));
+    console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
+
+    // 2. Generate and cache 1-bit artist-interpretation image (own LLM call)
+    const moment1 = await generateMomentBefore(env, events, "4level");
+    console.log(`Cron 1-bit: LLM picked ${moment1.year}, ${moment1.location}`);
+    const png1 = await generateMomentImage1Bit(env, moment1, displayDate, dateStr);
+    let bin1 = "";
+    for (let i = 0; i < png1.length; i += CRON_CHUNK) {
+      bin1 += String.fromCharCode(...png1.subarray(i, i + CRON_CHUNK));
+    }
+    await env.CACHE.put(`fact1:v3:${dateStr}`, btoa(bin1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 2. Also cache the fact.json for backward compatibility
@@ -334,6 +311,27 @@ export default {
         const moment = await generateMomentBefore(env, testEvents);
         const png = await generateMomentImage(env, moment, displayDate);
         return new Response(png, {
+          headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
+        });
+      }
+      case "/test1.png": {
+        // Test 1-bit with a custom date: /test1.png?m=10&d=31
+        const m1 = url.searchParams.get("m") ?? "10";
+        const d1 = url.searchParams.get("d") ?? "20";
+        const wikiUrl1 = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m1}/${d1}`;
+        const wikiRes1 = await fetch(wikiUrl1, {
+          headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
+        });
+        const wikiData1: any = await wikiRes1.json();
+        const testEvents1 = (wikiData1.events ?? [])
+          .filter((e: any) => e.year && e.text)
+          .map((e: any) => ({ year: e.year as number, text: e.text as string }));
+        const months1 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const displayDate1 = `${months1[parseInt(m1) - 1]} ${parseInt(d1)}`;
+        const testDateStr = `2026-${m1.padStart(2,"0")}-${d1.padStart(2,"0")}`;
+        const moment1 = await generateMomentBefore(env, testEvents1, "4level");
+        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr);
+        return new Response(png1, {
           headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
         });
       }
