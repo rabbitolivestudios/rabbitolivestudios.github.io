@@ -154,22 +154,42 @@ Text overlay (title centered, location left, date right)
 
 The reTerminal's SenseCraft HMI has a "Web Function" that screenshots a URL onto the e-ink display. No firmware coding needed.
 
-### Page 1: Moment Before
+### Initial Setup
 
-1. Create a new page → Web Function
+1. Power on the reTerminal (flip switch on back to ON)
+2. Connect to the device's WiFi AP (`reTerminal E1001-xxxx`) to configure your home WiFi
+3. Go to [sensecraft.seeed.cc/hmi](https://sensecraft.seeed.cc/hmi) and create an account
+4. In the **Workspace** tab, click **Add Device** and enter the pair code shown on the display
+
+### Create Pages
+
+**Page 1: Moment Before**
+1. Click **Add Page** → choose **Web Function**
 2. URL: `https://YOUR-URL.workers.dev/fact`
-3. Refresh interval: 24 hours
+3. Click **Save**
 
-### Page 2: Weather Dashboard
-
-1. Create a new page → Web Function
+**Page 2: Weather Dashboard**
+1. Click **Add Page** → choose **Web Function**
 2. URL: `https://YOUR-URL.workers.dev/weather`
-3. Refresh interval: 30 minutes
+3. Click **Save**
 
-### Pagelist (auto-cycle)
+### Create Pagelist & Deploy
 
-1. Create a Pagelist containing Page 1 and Page 2
-2. The display will cycle between the Moment Before illustration and the weather dashboard
+1. Select both pages and organize them into a **Pagelist**
+2. Set the **Interval (min)** to **15** in the Device Status Bar at the top of the workspace
+3. Click **Preview** to check how it looks
+4. Click **Deploy** to send it to the device
+5. If the device is asleep, press the button on the reTerminal to wake it
+
+The display will automatically cycle between pages every 15 minutes. Each page effectively refreshes every 30 minutes (every other cycle). The fact image is cached for 24h in KV, so frequent fetches cost nothing.
+
+### Firmware Update
+
+1. Connect the reTerminal to your computer via **USB cable**
+2. In SenseCraft HMI, go to **Workspace** → click **Device Flasher**
+3. Select **reTerminal E1001** and choose the latest firmware version
+4. Click **Flash** — do NOT disconnect USB or close the browser until complete
+5. After flashing, re-do WiFi setup and re-pair the device
 
 ---
 
@@ -179,9 +199,13 @@ The reTerminal's SenseCraft HMI has a "Web Function" that screenshots a URL onto
 |---------|----------|
 | 503 on `/fact.png` | Check `npx wrangler tail` for errors. Common: KV namespace ID mismatch |
 | Stale image | Cache key uses Chicago timezone. Delete old keys: `npx wrangler kv key list --namespace-id=ID` |
+| Stale image in browser | Browser caches for 24h. Hard refresh with Cmd+Shift+R |
+| Weather not updating on device | Check the Interval setting in SenseCraft HMI and that the device is online |
 | Pen/pencil artifacts | The prompt includes "no pens, no drawing tools" but FLUX occasionally adds them. Regenerate. |
 | Image too large for KV | KV values max 25MB. Current images are ~150-230KB (well within limits) |
 | Wrong location weather | Edit `src/weather.ts` — coordinates are hardcoded for Naperville, IL (60540) |
+| Emoji not showing on display | ESP32-S3 renderer doesn't support emoji. Use inline SVG or text labels. |
+| Faint text on display | All text must be pure black (#000). Grays are invisible on e-ink. |
 
 ---
 
