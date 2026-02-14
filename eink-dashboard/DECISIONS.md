@@ -133,11 +133,11 @@ Location (left)                    Date, Year (right)
 
 ### Decision: KV cache with versioned keys and 24h TTL
 
-**Cache key format:** `factpng:v8:YYYY-MM-DD`
+**Cache key format:** `factpng:v9:YYYY-MM-DD`
 
 **Why versioned keys:**
 - During development, changing the pipeline (model, style, output format) required invalidating old cached images
-- Bumping the version (`v3` → `v4` → ... → `v8`) forces regeneration without manually deleting KV keys
+- Bumping the version (`v3` → `v4` → ... → `v9`) forces regeneration without manually deleting KV keys
 - In production, the version stays fixed
 
 **Timezone:** Cache keys use America/Chicago date (the target location). This avoids serving yesterday's image when it's past midnight UTC but still the same day in Chicago.

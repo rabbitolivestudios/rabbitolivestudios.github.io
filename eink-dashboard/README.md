@@ -19,6 +19,8 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
+| `GET /weather` | 800x480 HTML weather dashboard (metric, emoji icons) | 30 min |
+| `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 grayscale "Moment Before" illustration | 24 hours |
 | `GET /fact.json` | "On This Day" historical event (JSON) | 24 hours |
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
@@ -148,18 +150,26 @@ Text overlay (title centered, location left, date right)
 
 ---
 
-## SenseCraft HMI Setup
+## SenseCraft HMI Setup (reTerminal E1001)
 
-### Page 1: Weather
+The reTerminal's SenseCraft HMI has a "Web Function" that screenshots a URL onto the e-ink display. No firmware coding needed.
 
-1. Add a Data Source: URL (JSON) → `https://YOUR-URL.workers.dev/weather.json`, refresh every 60 min
-2. Bind text components to `current.temp_c`, `current.condition.label`, `current.feels_like_c`, etc.
-3. Bind 5-day forecast to `daily_5d[0..4]`
+### Page 1: Moment Before
 
-### Page 2: Moment Before
+1. Create a new page → Web Function
+2. URL: `https://YOUR-URL.workers.dev/fact`
+3. Refresh interval: 24 hours
 
-1. Add an Image component: `https://YOUR-URL.workers.dev/fact.png`, size 800x480, refresh every 24h
-2. The image includes all text (title, location, date) — no additional components needed
+### Page 2: Weather Dashboard
+
+1. Create a new page → Web Function
+2. URL: `https://YOUR-URL.workers.dev/weather`
+3. Refresh interval: 30 minutes
+
+### Pagelist (auto-cycle)
+
+1. Create a Pagelist containing Page 1 and Page 2
+2. The display will cycle between the Moment Before illustration and the weather dashboard
 
 ---
 
