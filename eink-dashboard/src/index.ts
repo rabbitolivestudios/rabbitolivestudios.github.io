@@ -243,6 +243,26 @@ export default {
           headers: { "Content-Type": "image/jpeg", "Access-Control-Allow-Origin": "*" },
         });
       }
+      case "/test.png": {
+        // Test with a custom date: /test.png?m=10&d=20
+        const m = url.searchParams.get("m") ?? "10";
+        const d = url.searchParams.get("d") ?? "20";
+        const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
+        const wikiRes = await fetch(wikiUrl, {
+          headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
+        });
+        const wikiData: any = await wikiRes.json();
+        const testEvents = (wikiData.events ?? [])
+          .filter((e: any) => e.year && e.text)
+          .map((e: any) => ({ year: e.year as number, text: e.text as string }));
+        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const displayDate = `${months[parseInt(m) - 1]} ${parseInt(d)}`;
+        const moment = await generateMomentBefore(env, testEvents);
+        const png = await generateMomentImage(env, moment, displayDate);
+        return new Response(png, {
+          headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
+        });
+      }
       case "/health":
         return handleHealth();
       default:
