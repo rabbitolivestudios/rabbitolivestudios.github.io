@@ -14,9 +14,7 @@ import type { Env, MomentBeforeData } from "./types";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
-export type PromptStyle = "4level" | "1bit";
-
-const SYSTEM_PROMPT_BASE = `You are "Moment Before" — a creative mind that imagines the scene just BEFORE a famous historical event.
+const SYSTEM_PROMPT = `You are "Moment Before" — a creative mind that imagines the scene just BEFORE a famous historical event.
 
 You will receive a numbered list of events that happened on today's date in history.
 
@@ -27,9 +25,7 @@ Your job:
 3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
    Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
 4. Extract the geographic location where the event took place.
-5. Write an image-generation prompt for an illustration of that scene.`;
-
-const STYLE_4LEVEL = `
+5. Write an image-generation prompt for an illustration of that scene.
    The prompt MUST specify: hand-carved woodcut print, linocut relief print,
    vintage newspaper woodcut illustration,
    visible U-gouge and V-gouge carving marks,
@@ -41,27 +37,10 @@ const STYLE_4LEVEL = `
    AVOID: stippling, halftone dots, fine crosshatching, pencil shading,
    airbrush gradients, repetitive horizontal line-banding in the sky, photorealism.
    Cinematic composition, no text or lettering,
-   no pens, no pencils, no drawing tools, no art supplies, no hands.`;
-
-const STYLE_1BIT = `
-   For the prompt, describe ONLY the scene content — what to draw, the setting,
-   the architecture, the people, the objects, the mood. Do NOT include any art
-   style keywords (no "woodcut", "ink", "sketch", etc.) — the rendering style
-   will be applied separately.
-   The scene should be specific and recognizable, with clear architectural or
-   environmental landmarks that identify the location. Describe physical details:
-   buildings, vehicles, landscape features, sky conditions.
-   Cinematic wide-angle composition. No text or lettering.
-   No pens, no pencils, no drawing tools, no art supplies, no hands.`;
-
-const JSON_EXAMPLE = `
+   no pens, no pencils, no drawing tools, no art supplies, no hands.
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
 {"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"1960s newspaper editorial illustration, woodcut etching scratchboard style. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. High contrast black and white, clean hatching detail. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
-
-function getSystemPrompt(style: PromptStyle): string {
-  return SYSTEM_PROMPT_BASE + (style === "4level" ? STYLE_4LEVEL : STYLE_1BIT) + JSON_EXAMPLE;
-}
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -127,7 +106,6 @@ function validateMoment(obj: any): MomentBeforeData | null {
 export async function generateMomentBefore(
   env: Env,
   events: Array<{ year: number; text: string }>,
-  style: PromptStyle = "4level"
 ): Promise<MomentBeforeData> {
   if (events.length === 0) {
     return fallback();
@@ -143,7 +121,7 @@ export async function generateMomentBefore(
   try {
     const response: any = await env.AI.run(LLM_MODEL, {
       messages: [
-        { role: "system", content: getSystemPrompt(style) },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMessage },
       ],
       max_tokens: 600,
@@ -163,16 +141,10 @@ export async function generateMomentBefore(
   }
 
   // Fallback: pick the first event and build a generic prompt
-  return fallbackFromEvent(capped[0], style);
+  return fallbackFromEvent(capped[0]);
 }
 
-function fallbackStyle(style: PromptStyle): string {
-  return style === "4level"
-    ? "High contrast with gentle midtones, clean hatching detail, smooth grayscale shading allowed."
-    : "A dramatic historical scene, cinematic wide-angle composition.";
-}
-
-function fallbackFromEvent(event: { year: number; text: string }, style: PromptStyle): MomentBeforeData {
+function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeData {
   return {
     year: event.year,
     location: "Unknown",
@@ -181,7 +153,8 @@ function fallbackFromEvent(event: { year: number; text: string }, style: PromptS
     imagePrompt:
       `1960s newspaper editorial illustration, woodcut etching scratchboard style. ` +
       `A dramatic historical scene from ${event.year}. ` +
-      `${fallbackStyle(style)} Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
+      `High contrast with gentle midtones, clean hatching detail, smooth grayscale shading allowed. ` +
+      `Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
   };
 }
 

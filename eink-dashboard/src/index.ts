@@ -2,7 +2,7 @@ import type { Env } from "./types";
 import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
-import { generateMomentBefore, type PromptStyle } from "./moment";
+import { generateMomentBefore } from "./moment";
 import { handleWeatherPage } from "./pages/weather";
 import { handleFactPage } from "./pages/fact";
 
@@ -109,7 +109,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   // Cache miss — run the 4-level pipeline
   try {
     const { events, displayDate } = await getTodayEvents(env);
-    const moment = await generateMomentBefore(env, events, "4level");
+    const moment = await generateMomentBefore(env, events);
     const png = await generateMomentImage(env, moment, displayDate);
 
     // Store in KV as base64 (chunk to avoid stack overflow)
@@ -168,9 +168,9 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
 
   // Cache miss — run the full pipeline with 1-bit dithering
   try {
-    const { events, dateStr: ds, displayDate } = await getTodayEvents(env);
-    const moment = await generateMomentBefore(env, events, "4level");
-    const png = await generateMomentImage1Bit(env, moment, displayDate, ds);
+    const { events, displayDate } = await getTodayEvents(env);
+    const moment = await generateMomentBefore(env, events);
+    const png = await generateMomentImage1Bit(env, moment, displayDate);
 
     // Store in KV as base64
     let binary = "";
@@ -218,7 +218,7 @@ async function handleScheduled(env: Env): Promise<void> {
     const CRON_CHUNK = 8192;
 
     // 1. Generate and cache 4-level grayscale image (own LLM call)
-    const moment4 = await generateMomentBefore(env, events, "4level");
+    const moment4 = await generateMomentBefore(env, events);
     console.log(`Cron 4-level: LLM picked ${moment4.year}, ${moment4.location}`);
     const png4 = await generateMomentImage(env, moment4, displayDate);
     let bin4 = "";
@@ -229,9 +229,9 @@ async function handleScheduled(env: Env): Promise<void> {
     console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
 
     // 2. Generate and cache 1-bit artist-interpretation image (own LLM call)
-    const moment1 = await generateMomentBefore(env, events, "4level");
+    const moment1 = await generateMomentBefore(env, events);
     console.log(`Cron 1-bit: LLM picked ${moment1.year}, ${moment1.location}`);
-    const png1 = await generateMomentImage1Bit(env, moment1, displayDate, dateStr);
+    const png1 = await generateMomentImage1Bit(env, moment1, displayDate);
     let bin1 = "";
     for (let i = 0; i < png1.length; i += CRON_CHUNK) {
       bin1 += String.fromCharCode(...png1.subarray(i, i + CRON_CHUNK));
@@ -328,9 +328,8 @@ export default {
           .map((e: any) => ({ year: e.year as number, text: e.text as string }));
         const months1 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
         const displayDate1 = `${months1[parseInt(m1) - 1]} ${parseInt(d1)}`;
-        const testDateStr = `2026-${m1.padStart(2,"0")}-${d1.padStart(2,"0")}`;
-        const moment1 = await generateMomentBefore(env, testEvents1, "4level");
-        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr);
+        const moment1 = await generateMomentBefore(env, testEvents1);
+        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1);
         return new Response(png1, {
           headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
         });

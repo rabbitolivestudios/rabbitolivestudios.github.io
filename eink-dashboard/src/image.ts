@@ -34,55 +34,6 @@ const FACT1_STEPS = 20;       // Workers AI max
 const FACT1_GUIDANCE = 6.5;
 const FACT1_USE_MEDIAN = false; // toggle: median filter before threshold
 
-// --- 1-bit style rotation (one per day, event-aware seed) ---
-
-const STYLES_1BIT = [
-  {
-    name: "woodcut",
-    prompt: "dramatic woodcut engraving, carved black ink, bold shadows, strong skyline silhouettes, thick lines, minimal gray",
-  },
-  {
-    name: "scratchboard",
-    prompt: "scratchboard illustration, black surface with white carved lines, high contrast, detailed but clean, no gradients",
-  },
-  {
-    name: "linocut",
-    prompt: "linocut print poster style, bold shapes, minimal detail, strong composition, thick ink blocks",
-  },
-  {
-    name: "pen_ink",
-    prompt: "black and white pen and ink illustration, architectural drawing, clean lines, minimal shading, white paper background",
-  },
-  {
-    name: "silhouette",
-    prompt: "bold silhouette composition, black skyline against white sky, minimal detail, dramatic shapes",
-  },
-] as const;
-
-/** Pick a stable style for the day, seeded by date + event info. */
-function pickOneBitStyle(dateStr: string, title: string, location: string): typeof STYLES_1BIT[number] {
-  const seed = `${dateStr}|${title}|${location}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  }
-  const idx = Math.abs(hash) % STYLES_1BIT.length;
-  return STYLES_1BIT[idx];
-}
-
-/** Assemble the final SDXL prompt: style + negatives + scene. */
-function buildOneBitPrompt(style: string, scene: string): string {
-  return (
-    `${style}. ` +
-    `Black and white illustration only. ` +
-    `Flat clean white background. Ink drawing. ` +
-    `No photorealism. No grayscale painting. No watercolor. No gradients. No color. ` +
-    `No texture, no grain, no paper noise. No halftone, no stippling, no dots. ` +
-    `Minimal background detail. ` +
-    `Scene: ${scene}`
-  );
-}
-
 // --- AI image generation (SDXL) ---
 
 const SDXL_MODEL = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
@@ -533,13 +484,8 @@ export async function generateMomentImage1Bit(
   env: Env,
   moment: MomentBeforeData,
   displayDate: string,
-  dateStr: string
 ): Promise<Uint8Array> {
-  // 1. Use the same rich woodcut prompt from the LLM (proven to produce great scenes)
-  //    The 1-bit conversion happens via threshold, not style injection.
-  console.log(`fact1.png: using imagePrompt directly`);
-
-  // 2. Generate → grayscale → crop → resize
+  // 1. Generate → grayscale → crop → resize (same woodcut prompt as 4-level)
   const gray = await generateAndDecodeGray(env, moment.imagePrompt, FACT1_STEPS, FACT1_GUIDANCE);
 
   // 4. Optional median filter (behind flag)
