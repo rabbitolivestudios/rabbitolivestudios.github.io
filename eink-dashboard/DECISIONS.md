@@ -264,11 +264,11 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 
 ---
 
-## 12. Weather Dashboard v2 (`/weather2`)
+## 12. Weather Dashboard v2
 
-### Decision: Improved dashboard as a separate endpoint for safe comparison
+### Decision: Improved dashboard replacing the original `/weather`
 
-**New features in v2:**
+**New features (now live on `/weather`):**
 - **Day/night icons**: Crescent moon (clear_night) and moon-behind-cloud (partly_cloudy_night) for nighttime hours
 - **Wind direction**: Cardinal labels (N, NE, E, etc.) computed from degrees, plus gust speed when significant (gusts > wind + 10)
 - **Sunrise/sunset**: Displayed below current conditions, formatted in 12h time
@@ -281,11 +281,11 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 - **15-min cache**: Reduced from 30 min to match device refresh interval
 
 **Development approach:**
-- `/weather` (old) kept untouched as rollback
-- `/weather2` (new) served from separate `src/pages/weather2.ts`
-- `v2.0.0` git tag marks the pre-improvement state
+- Developed as `/weather2` alongside old `/weather` for side-by-side comparison
+- After validation, replaced `/weather` and deleted old `src/pages/weather.ts`
+- `v2.0.0` git tag marks the pre-improvement state for rollback
 - Data layer changes (types, weather.ts) are additive — no fields removed
-- Test params: `?test-alert=tornado|winter|flood` and `?test-rain` inject fake data for visual testing
+- Test params: `?test-alert=tornado|winter|flood`, `?test-rain`, `?test-temp=N` inject fake data for visual testing
 
 **NWS alerts integration (`src/alerts.ts`):**
 - Endpoint: `https://api.weather.gov/alerts/active?point=LAT,LON`

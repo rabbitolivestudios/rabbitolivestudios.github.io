@@ -19,8 +19,7 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
-| `GET /weather` | 800x480 HTML weather dashboard (metric, SVG icons) | 15 min |
-| `GET /weather2` | Improved weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings) | 15 min |
+| `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration | 24 hours |
 | `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
