@@ -36,7 +36,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
 | `GET /color/apod` | 800x480 color NASA APOD image (dithered to 6 colors) | 24 hours |
 | `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
-| `GET /color/test-moment?m=MM&d=DD` | Generate color moment for any date | none |
+| `GET /color/test-moment?m=MM&d=DD&style=ID` | Generate color moment for any date + optional style override | none |
 | `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
 | `GET /health` | Status check | none |
 
@@ -223,13 +223,18 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 
 ### Pipeline D: Color Spectra 6 (`/color/moment`)
 
-Uses **FLUX.2 klein-9b** (fallback SDXL) with a "screen print poster" style, then Floyd-Steinberg dithers to the 6-color Spectra palette.
+Uses **FLUX.2 klein-9b** (fallback SDXL) with 5 daily-rotating art styles optimized for 6-color dithering, then Floyd-Steinberg dithers to the Spectra palette.
+
+**Styles** (rotate daily by `(dayOfYear - 1) % 5`): Gouache, Oil Painting, Graphic Novel, Ink + Wash, Color Woodblock. Test override: `/color/test-moment?m=7&d=20&style=ink_wash`.
 
 ```
 Shared Moment (from KV cache or LLM)
         │
         ▼
-Prepend "screen print poster, flat inks, bold shapes" + anti-text suffix
+Pick daily style (Gouache / Oil Painting / Graphic Novel / Ink+Wash / Woodblock)
+        │
+        ▼
+Prepend style prompt + color palette suffix + anti-text suffix
         │
         ▼
 FLUX.2 klein-9b → JPEG  [fallback: SDXL]
@@ -256,7 +261,7 @@ KV cache (24h)
 
 - **Image models**: FLUX.2 klein-9b (Pipeline A), SDXL (Pipeline B + fallback)
 - **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (scene-only prompts, no style baked in)
-- **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); 6-style rotation for Pipeline B (Woodcut / Silhouette / Linocut / Noir / Pen & Ink / Charcoal Block)
+- **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); 6-style rotation for Pipeline B (Woodcut / Silhouette / Linocut / Noir / Pen & Ink / Charcoal Block); 5-style rotation for Pipeline D (Gouache / Oil Painting / Graphic Novel / Ink+Wash / Color Woodblock)
 - **4-level output**: 8-bit grayscale PNG quantized to 4 levels (0, 85, 170, 255)
 - **1-bit output**: True 1-bit PNG with style-aware conversion (Bayer dithering or histogram threshold)
 - **PNG encoder/decoder**: Pure JavaScript using Web API `CompressionStream`/`DecompressionStream`

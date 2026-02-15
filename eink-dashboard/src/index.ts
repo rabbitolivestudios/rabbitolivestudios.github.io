@@ -6,7 +6,7 @@ import { generateMomentBefore, getOrGenerateMoment } from "./moment";
 import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
-import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday } from "./pages/color-moment";
+import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday, generateColorMoment, getColorMomentStyle } from "./pages/color-moment";
 import { handleColorAPODPage } from "./pages/color-apod";
 import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
@@ -16,7 +16,7 @@ import { getChicagoDateParts } from "./date-utils";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.5.0";
+const VERSION = "3.6.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -252,15 +252,25 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
-    // 5. E1002 — Color moment (handled on-demand, pre-warm with a fetch)
-    try {
-      const colorMomentUrl = `https://eink-dashboard.thiago-oliveira77.workers.dev/color/moment`;
-      // Pre-warm by calling our own endpoint (it will generate + cache)
-      // Note: this is a self-call which Workers supports via service bindings or fetch
-      // For simplicity, the page handler caches to KV on first request
-      console.log("Cron: color moment will be warmed on first request");
-    } catch (err) {
-      console.error("Cron: color moment warm failed:", err);
+    // 5. E1002 — Color moment (generate + cache directly)
+    if (!birthday) {
+      try {
+        const colorStyle = getColorMomentStyle(dateStr);
+        const colorCacheKey = `color-moment:v2:${dateStr}:${colorStyle.id}`;
+        const existing = await env.CACHE.get(colorCacheKey);
+        if (!existing) {
+          const colorResult = await generateColorMoment(env, sharedMoment, dateStr);
+          const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          const colorDisplayDate = `${months[monthNum - 1]} ${dayNum}`;
+          const cacheData = JSON.stringify({ imageB64: colorResult.base64, moment: sharedMoment, displayDate: colorDisplayDate });
+          await env.CACHE.put(colorCacheKey, cacheData, { expirationTtl: 86400 });
+          console.log(`Cron: cached color moment (${colorStyle.name}) for ${dateStr}`);
+        } else {
+          console.log(`Cron: color moment already cached for ${dateStr}`);
+        }
+      } catch (err) {
+        console.error("Cron: color moment warm failed:", err);
+      }
     }
 
     // 6. E1002 — Color APOD

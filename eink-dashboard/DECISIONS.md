@@ -441,11 +441,10 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 - `getOrGenerateMoment()` in moment.ts checks KV (`moment:v1:{dateStr}`) before calling LLM
 - Previously each pipeline made its own LLM call — could pick different events
 
-**Color style prompt:**
-- Initially used `"screen print poster, flat inks, bold shapes..."` — produced overly blocky/posterized results when dithered to 6 colors
-- Switched to **natural style (no prefix)** — scene-only `imagePrompt` + anti-text suffix
-- Floyd-Steinberg handles natural photos well; the poster style was too aggressive
-- The dithering itself provides the artistic quality — no need for style constraints
+**Color style prompt evolution:**
+- v3.5.0: Used `"screen print poster, flat inks, bold shapes..."` — produced overly blocky/posterized results when dithered to 6 colors
+- v3.5.x: Switched to **natural style (no prefix)** — scene-only `imagePrompt` + anti-text suffix. Floyd-Steinberg handled natural photos OK but quality was inconsistent
+- v3.6.0: **5-style daily rotation** (gouache, oil painting, graphic novel, ink+wash, color woodblock) + palette suffix. Best balance: curated styles produce flat color areas that dither cleanly while adding variety
 
 **APOD integration:**
 - NASA APOD API key stored as Cloudflare secret (`wrangler secret put APOD_API_KEY`)
@@ -464,7 +463,38 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 
 ---
 
-## 15. What We Didn't Do (and why)
+## 15. Color Moment Style Rotation (v3.6.0)
+
+### Decision: 5-style daily rotation optimized for Floyd-Steinberg dithering
+
+The color moment pipeline (`/color/moment`) previously sent the LLM's scene-only `imagePrompt` to FLUX.2 with no art style prefix. This produced decent results but lacked variety. Adding a 5-style rotation optimized for 6-color Floyd-Steinberg dithering brings visual variety to the E1002 Spectra 6 display.
+
+**Styles** (rotate daily by `(dayOfYear - 1) % 5`):
+
+| # | Style | Prompt summary | Why it works for Spectra 6 |
+|---|-------|----------------|---------------------------|
+| 0 | Gouache | Opaque matte pigment, bold flat fields | Flat color areas dither cleanly |
+| 1 | Oil Painting | Rich saturated colors, impasto strokes | High saturation maps well to 6-color palette |
+| 2 | Graphic Novel | Bold ink outlines, flat color fills | Cel-shaded look minimizes gradient artifacts |
+| 3 | Ink + Wash | Black ink outlines with color washes | High contrast outlines survive dithering |
+| 4 | Color Woodblock | Ukiyo-e flat color areas, key block | Traditional limited palette maps naturally |
+
+**Color palette suffix**: All prompts get `"limited palette, large flat color regions, bold saturated reds blues yellows greens, no gradients, avoid tiny details, high contrast"` appended to guide the model toward Spectra 6-friendly output.
+
+**Why not the same "no style" approach as before:**
+- The previous "natural style" approach (scene-only prompt, no prefix) produced results that varied wildly in dither quality
+- These 5 styles were chosen specifically because they produce large flat color regions that map well to the 6-color Spectra palette
+- The palette suffix further constrains the model to avoid gradients and fine details
+
+**Cache key change**: `color-moment:v1:YYYY-MM-DD` → `color-moment:v2:YYYY-MM-DD:STYLE_ID` (includes style ID to support cache invalidation per style).
+
+**Cron warm-up**: The daily cron now generates and caches the color moment directly (previously was a no-op that relied on first request).
+
+**Test support**: `/color/test-moment?m=MM&d=DD&style=STYLE_ID` allows forcing a specific style.
+
+---
+
+## 16. What We Didn't Do (and why)
 
 | Consideration | Decision | Reason |
 |---------------|----------|--------|
@@ -486,3 +516,4 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 | Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
 | Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
 | Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |
+| No style for color moment | 5-style daily rotation (v3.6.0) | Previous "no style" produced too-variable dither quality; 5 curated styles produce large flat color areas that dither well to Spectra 6 palette |

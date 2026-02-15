@@ -25,6 +25,45 @@ import { WIDTH, HEIGHT } from "../image";
 
 const ANTI_TEXT_SUFFIX = "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
+/** Art styles optimized for 6-color Floyd-Steinberg dithering on Spectra 6 display. */
+export const COLOR_MOMENT_STYLES = [
+  {
+    id: "gouache",
+    name: "Gouache",
+    prompt: "gouache painting, opaque matte pigment, bold flat color fields, visible brush strokes, thick paint application",
+  },
+  {
+    id: "oil_painting",
+    name: "Oil Painting",
+    prompt: "oil painting on canvas, rich saturated colors, visible impasto brush strokes, dramatic lighting, painterly realism",
+  },
+  {
+    id: "graphic_novel",
+    name: "Graphic Novel",
+    prompt: "graphic novel panel illustration, bold ink outlines, flat color fills, cel-shaded, high contrast, comic book art",
+  },
+  {
+    id: "ink_wash",
+    name: "Ink + Wash",
+    prompt: "ink and watercolor wash illustration, black ink outlines with transparent color washes, loose brushwork, visible paper texture",
+  },
+  {
+    id: "woodblock",
+    name: "Color Woodblock",
+    prompt: "Japanese woodblock print, ukiyo-e style, bold flat color areas, black key block outlines, hand-carved texture, limited color palette",
+  },
+] as const;
+
+const COLOR_PALETTE_SUFFIX = "limited palette, large flat color regions, bold saturated reds blues yellows greens, no gradients, avoid tiny details, high contrast";
+
+/** Get the color moment style for a given Chicago-timezone date string. */
+export function getColorMomentStyle(dateStr: string): typeof COLOR_MOMENT_STYLES[number] {
+  const d = new Date(dateStr + "T12:00:00Z");
+  const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86400000) + 1;
+  return COLOR_MOMENT_STYLES[(dayOfYear - 1) % COLOR_MOMENT_STYLES.length];
+}
+
 /** Encode PNG bytes to base64 in chunks. */
 function pngToBase64(png: Uint8Array): string {
   let binary = "";
@@ -35,12 +74,18 @@ function pngToBase64(png: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Generate a color Spectra 6 moment image, returns base64 PNG. */
-async function generateColorMoment(
+/** Generate a color Spectra 6 moment image, returns base64 PNG + styleId. */
+export async function generateColorMoment(
   env: Env,
   moment: MomentBeforeData,
-): Promise<string> {
-  const prompt = `${moment.imagePrompt}, ${ANTI_TEXT_SUFFIX}`;
+  dateStr: string,
+  forceStyleId?: string,
+): Promise<{ base64: string; styleId: string }> {
+  const style = forceStyleId
+    ? (COLOR_MOMENT_STYLES.find(s => s.id === forceStyleId) ?? getColorMomentStyle(dateStr))
+    : getColorMomentStyle(dateStr);
+  console.log(`Color moment style: ${style.name} (${style.id})`);
+  const prompt = `${style.prompt}, ${moment.imagePrompt}, ${COLOR_PALETTE_SUFFIX}, ${ANTI_TEXT_SUFFIX}`;
 
   let rgb: Uint8Array | null = null;
 
@@ -63,7 +108,7 @@ async function generateColorMoment(
   // Dither to Spectra 6 palette
   const indices = ditherFloydSteinberg(rgb, WIDTH, HEIGHT, SPECTRA6_PALETTE);
   const png = await encodePNGIndexed(indices, WIDTH, HEIGHT, SPECTRA6_PALETTE);
-  return pngToBase64(png);
+  return { base64: pngToBase64(png), styleId: style.id };
 }
 
 /** Decode JPEG bytes to 800x480 RGB via Cloudflare Images. */
@@ -199,7 +244,8 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 
   // Check KV cache
   const birthday = getBirthdayToday(monthNum, dayNum);
-  const cacheKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v1:${dateStr}`;
+  const colorStyle = getColorMomentStyle(dateStr);
+  const cacheKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
 
   const cached = await env.CACHE.get(cacheKey);
   if (cached) {
@@ -231,12 +277,14 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
       console.error("Color birthday failed, falling back to moment:", err);
       const { events } = await getTodayEvents(env);
       moment = await getOrGenerateMoment(env, events, dateStr);
-      imageB64 = await generateColorMoment(env, moment);
+      const result = await generateColorMoment(env, moment, dateStr);
+      imageB64 = result.base64;
     }
   } else {
     const { events } = await getTodayEvents(env);
     moment = await getOrGenerateMoment(env, events, dateStr);
-    imageB64 = await generateColorMoment(env, moment);
+    const result = await generateColorMoment(env, moment, dateStr);
+    imageB64 = result.base64;
   }
 
   // Cache the result
@@ -253,6 +301,7 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 export async function handleColorTestMoment(env: Env, url: URL): Promise<Response> {
   const m = url.searchParams.get("m") ?? "7";
   const d = url.searchParams.get("d") ?? "20";
+  const forceStyle = url.searchParams.get("style") ?? undefined;
   const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
   const wikiRes = await fetch(wikiUrl, {
     headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
@@ -264,11 +313,12 @@ export async function handleColorTestMoment(env: Env, url: URL): Promise<Respons
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const displayDate = `${months[parseInt(m) - 1]} ${parseInt(d)}`;
+  const testDateStr = `2026-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
 
   const moment = await generateMomentBefore(env, testEvents);
-  const imageB64 = await generateColorMoment(env, moment);
+  const result = await generateColorMoment(env, moment, testDateStr, forceStyle);
 
-  const html = renderHTML(imageB64, moment, displayDate);
+  const html = renderHTML(result.base64, moment, displayDate);
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
   });
