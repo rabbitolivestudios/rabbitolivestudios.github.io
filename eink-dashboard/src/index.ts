@@ -9,7 +9,7 @@ import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData } from "./device";
 
-const VERSION = "3.3.0";
+const VERSION = "3.4.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -143,7 +143,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   }
 
   // Regular Moment Before pipeline
-  const cacheKey = `fact4:v3:${dateStr}`;
+  const cacheKey = `fact4:v4:${dateStr}`;
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
     const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
@@ -169,7 +169,7 @@ async function handleFactImage(env: Env): Promise<Response> {
  */
 async function handleFact1BitImage(env: Env): Promise<Response> {
   const { dateStr } = getChicagoDateParts();
-  const cacheKey = `fact1:v6:${dateStr}`;
+  const cacheKey = `fact1:v7:${dateStr}`;
 
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
@@ -229,7 +229,7 @@ async function handleScheduled(env: Env): Promise<void> {
         // Fall through to generate regular 4-level as fallback
         const moment4 = await generateMomentBefore(env, events);
         const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
-        await env.CACHE.put(`fact4:v3:${dateStr}`, pngToBase64(png4));
+        await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
         console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
       }
     } else {
@@ -237,7 +237,7 @@ async function handleScheduled(env: Env): Promise<void> {
       const moment4 = await generateMomentBefore(env, events);
       console.log(`Cron 4-level: LLM picked ${moment4.year}, ${moment4.location}`);
       const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
-      await env.CACHE.put(`fact4:v3:${dateStr}`, pngToBase64(png4));
+      await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
       console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
     }
 
@@ -245,7 +245,7 @@ async function handleScheduled(env: Env): Promise<void> {
     const moment1 = await generateMomentBefore(env, events);
     console.log(`Cron 1-bit: LLM picked ${moment1.year}, ${moment1.location}`);
     const png1 = await generateMomentImage1Bit(env, moment1, displayDate, dateStr);
-    await env.CACHE.put(`fact1:v6:${dateStr}`, pngToBase64(png1));
+    await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 4. Cache fact.json for backward compatibility

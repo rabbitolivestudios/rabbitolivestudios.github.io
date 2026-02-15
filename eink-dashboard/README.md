@@ -1,7 +1,7 @@
 # E-Ink "Moment Before" Dashboard
 
 A Cloudflare Workers backend for the **reTerminal E1001** (ESP32-S3, 7.5" ePaper, 800x480).
-Every day it generates an AI illustration depicting the **moment just before** a famous historical event — the viewer sees the scene, the location, and the date, but must guess what's about to happen.
+Every day it generates an AI illustration depicting a famous historical event at its most iconic, dramatic moment — the viewer sees the scene, the location, and the date.
 
 Also serves weather data for Naperville, IL and a daily "On This Day" historical fact — all free, no API keys required.
 
@@ -10,10 +10,10 @@ Also serves weather data for Naperville, IL and a daily "On This Day" historical
 **"Moment Before"** — each day, the system:
 1. Fetches all historical events for today's date from Wikipedia
 2. An LLM (Llama 3.3 70B) picks the most visually dramatic event
-3. An image model generates an illustration of the scene *just before* the event, with a daily rotating art style
+3. An image model generates an illustration of the event at its defining moment of action, with a daily rotating art style
 4. Two versions are produced: a 4-level grayscale PNG (FLUX.2, rotating styles) and a 1-bit PNG (SDXL, 6 rotating styles with style-aware conversion)
 
-Example: For the sinking of the Titanic, the image would show a grand ocean liner sailing calmly through dark waters, with a faint iceberg on the horizon. The text reads: **"Sinking of the Titanic"** / **"North Atlantic Ocean"** / **"Apr 14, 1912"**
+Example: For the sinking of the Titanic, the image would show the ocean liner tilting steeply into dark water, lifeboats scattered on the sea below. The text reads: **"Sinking of the Titanic"** / **"North Atlantic Ocean"** / **"Apr 14, 1912"**
 
 ## Endpoints
 

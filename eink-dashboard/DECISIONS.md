@@ -213,6 +213,14 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 - Good at following structured output instructions (JSON)
 - Creative enough to pick visually interesting events and write compelling scene descriptions
 
+**Scene direction — "event itself" (v3.3.0+):**
+- Originally the LLM described the "moment before" the event (calm, pre-event scene)
+- Switched to depicting the event itself at its defining moment of action
+- Reason: pre-event scenes were often too calm and ambiguous on e-ink — a ship sailing calmly looks like any ship. The event in action (Titanic tilting, bombers over Dresden) is instantly recognizable.
+- Guard rails: "avoid graphic injury, bodies, blood, or close-up suffering; focus on the iconic scene and scale"
+- Historical accuracy constraint: architecture, vehicles, clothing must match the era (e.g., 1945 Dresden = baroque churches, not modern skyscrapers)
+- The "Moment Before" brand name is kept (function names, types) but the prompt semantics are "event itself"
+
 **Scene-only prompt design:**
 - One `SYSTEM_PROMPT` constant that instructs the LLM to write scene-only prompts (no art style)
 - The LLM writes scene descriptions covering subject, setting, composition, lighting, and mood
@@ -236,8 +244,8 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 ### Decision: KV cache with versioned keys and 24h TTL
 
 **Cache key formats:**
-- 4-level: `fact4:v3:YYYY-MM-DD`
-- 1-bit: `fact1:v6:YYYY-MM-DD`
+- 4-level: `fact4:v4:YYYY-MM-DD`
+- 1-bit: `fact1:v7:YYYY-MM-DD`
 
 **Why versioned keys:**
 - During development, changing the pipeline (model, style, dithering algorithm) required invalidating old cached images
@@ -412,6 +420,7 @@ FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model pro
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
 | User-configurable location | Hardcoded Naperville, IL | Single-user deployment; easy to change in code |
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
+| "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |
 | Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
 | Single art style for Pipeline B | 6-style rotation (v3.3.0) | Variety with style-aware conversion; each style picks Bayer or threshold mode for best results |
 | Newsprint dots style for Pipeline B | Replaced with charcoal_block | Newsprint ran too dark on SDXL output; charcoal_block produces better 1-bit results with threshold mode |
