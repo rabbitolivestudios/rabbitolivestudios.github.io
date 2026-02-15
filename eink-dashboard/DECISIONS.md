@@ -308,6 +308,16 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 **v2.2 tweaks:**
 - Sunrise/sunset icons enlarged from 22px to 28px, font from 16px to 18px for better e-ink readability
 
+**v3.2 — SenseCraft device data + layout optimization:**
+- Added indoor temp/humidity (from SenseCraft HMI API) and battery level to the weather page
+- `src/device.ts` fetches device data server-side, KV cached 5 min — no URL change needed on device
+- Battery icon + percentage displayed top-right in header, below date/time
+- Indoor temp/humidity displayed in header center (house + droplet icons)
+- Wind merged onto the feels-like line to save vertical space; gusts shown as range (e.g. "SW 15-25 km/h")
+- These changes reclaim ~42px, ensuring NWS alert banners fit within 480px without cutting off hourly cards
+- Alert and rain warning are mutually exclusive (if/else) — never both rendered
+- Test param: `?test-device` injects fake device data (22°C, 45%, battery 73%)
+
 **NWS alerts integration (`src/alerts.ts`):**
 - Endpoint: `https://api.weather.gov/alerts/active?point=LAT,LON`
 - Requires `User-Agent` header (NWS policy)
@@ -377,3 +387,6 @@ FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model pro
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
 | Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
 | Shared FLUX.2 code with birthday pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
+| Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
+| Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
+| Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |
