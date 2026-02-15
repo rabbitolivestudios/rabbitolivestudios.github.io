@@ -3,7 +3,6 @@ import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
 import { generateMomentBefore } from "./moment";
-import { handleWeatherPage } from "./pages/weather";
 import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 
@@ -336,8 +335,6 @@ export default {
         });
       }
       case "/weather":
-        return handleWeatherPage(env);
-      case "/weather2":
         return handleWeatherPageV2(env, url);
       case "/fact":
         return handleFactPage();
@@ -347,7 +344,7 @@ export default {
         return jsonResponse(
           {
             error: "Not found",
-            endpoints: ["/weather", "/weather2", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/health"],
+            endpoints: ["/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/health"],
           },
           404,
           0
