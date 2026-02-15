@@ -19,7 +19,8 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
-| `GET /weather` | 800x480 HTML weather dashboard (metric, SVG icons) | 30 min |
+| `GET /weather` | 800x480 HTML weather dashboard (metric, SVG icons) | 15 min |
+| `GET /weather2` | Improved weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration | 24 hours |
 | `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
@@ -27,7 +28,7 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
 | `GET /test.png?m=MM&d=DD` | Generate 4-level image for any date (e.g. `?m=10&d=20`) | none |
 | `GET /test1.png?m=MM&d=DD` | Generate 1-bit image for any date (e.g. `?m=7&d=4`) | none |
-| `GET /weather.json` | Current + 12h hourly + 5-day forecast (metric) | 30 min |
+| `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /health` | Status check | none |
 
 ## Live URL
@@ -172,10 +173,10 @@ Caption strip (16px white strip: location left, title center, date right)
                      │  │ • Llama 3.3   │  │────▶│  Open-Meteo   │
                      │  │ • SDXL        │  │     │  (weather)    │
                      │  ├────────────────┤  │     └──────────────┘
-                     │  │ Images API     │  │
-                     │  │ (JPEG→PNG)     │  │
-                     │  ├────────────────┤  │
-                     │  │ KV Cache       │  │
+                     │  │ Images API     │  │     ┌──────────────┐
+                     │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
+                     │  ├────────────────┤  │     │  (alerts)     │
+                     │  │ KV Cache       │  │     └──────────────┘
                      │  │ (24h TTL)      │  │
                      │  └────────────────┘  │
                      └──────────────────────┘
@@ -244,6 +245,7 @@ The display will automatically cycle between pages every 15 minutes. Each page e
 | Weather not updating on device | Check the Interval setting in SenseCraft HMI and that the device is online |
 | Image too large for KV | KV values max 25MB. Current images are ~20-230KB (well within limits) |
 | Wrong location weather | Edit `src/weather.ts` — coordinates are hardcoded for Naperville, IL (60540) |
+| No weather alerts showing | NWS alerts only cover active US warnings. Check `api.weather.gov` for your area. Alerts cache for 5 min in KV. |
 | Emoji not showing on display | ESP32-S3 renderer doesn't support emoji. Use inline SVG or text labels. |
 | Faint text on display | All text must be pure black (#000). Grays are invisible on e-ink. |
 

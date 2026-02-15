@@ -264,7 +264,38 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 
 ---
 
-## 12. What We Didn't Do (and why)
+## 12. Weather Dashboard v2 (`/weather2`)
+
+### Decision: Improved dashboard as a separate endpoint for safe comparison
+
+**New features in v2:**
+- **Day/night icons**: Crescent moon (clear_night) and moon-behind-cloud (partly_cloudy_night) for nighttime hours
+- **Wind direction**: Cardinal labels (N, NE, E, etc.) computed from degrees, plus gust speed when significant (gusts > wind + 10)
+- **Sunrise/sunset**: Displayed below current conditions, formatted in 12h time
+- **Smart precipitation**: Daily cards show snowfall (cm), rain amount (mm), or probability — whichever is most informative
+- **NWS weather alerts**: Fetched from `api.weather.gov`, cached 5 min in KV, sorted by severity (Extreme > Severe > Moderate > Minor)
+- **Alert banner**: Black bar with white text between daily and hourly sections, comma-separated alert names
+- **Rain warning**: When no alerts, checks 15-min precipitation data and hourly probability for imminent rain
+- **15-min precipitation**: Open-Meteo `minutely_15` data (8 values = 2 hours ahead)
+- **Dynamic location**: Uses `w.location.name` instead of hardcoded "NAPERVILLE, IL"
+- **15-min cache**: Reduced from 30 min to match device refresh interval
+
+**Development approach:**
+- `/weather` (old) kept untouched as rollback
+- `/weather2` (new) served from separate `src/pages/weather2.ts`
+- `v2.0.0` git tag marks the pre-improvement state
+- Data layer changes (types, weather.ts) are additive — no fields removed
+- Test params: `?test-alert=tornado|winter|flood` and `?test-rain` inject fake data for visual testing
+
+**NWS alerts integration (`src/alerts.ts`):**
+- Endpoint: `https://api.weather.gov/alerts/active?point=LAT,LON`
+- Requires `User-Agent` header (NWS policy)
+- Retries once on failure, returns stale cache or `[]` on error
+- No API key needed — free US government API
+
+---
+
+## 13. What We Didn't Do (and why)
 
 | Consideration | Decision | Reason |
 |---------------|----------|--------|
