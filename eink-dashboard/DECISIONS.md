@@ -49,9 +49,20 @@ This document records the key decisions made during development of the "Moment B
 | 1 | Pencil Sketch | `detailed graphite pencil sketch, fine cross-hatching, full tonal range, on white paper` |
 | 2 | Charcoal | `dramatic charcoal drawing, expressive strokes, deep shadows, textured paper` |
 
-**Pipeline B** uses a hardcoded `WOODCUT_STYLE` constant (same woodcut style as before, just moved from LLM to code).
+**Pipeline B 6-style rotation** (v3.3.0, deterministic via `djb2(date|title|location) % 6`):
 
-**Anti-text suffix** appended to all prompts: `"no text, no words, no letters, no writing"`
+| # | Style | Mode | Notes |
+|---|-------|------|-------|
+| 0 | Woodcut | bayer8 | Same as before — bold gouge strokes, the proven default |
+| 1 | Silhouette Poster | threshold | Stark cutout shapes, paper-cut shadow puppet feel |
+| 2 | Linocut | threshold | Bold carved relief, thick outlines, hand-printed texture |
+| 3 | Bold Ink Noir | threshold | Film noir, heavy ink pools, dramatic chiaroscuro |
+| 4 | Pen & Ink | threshold | Fine crosshatching, stipple shading, precise lines |
+| 5 | Charcoal Block | threshold | Expressive strokes, large shadow masses, graphic feel |
+
+Each style specifies its own conversion mode (Bayer dithering or histogram-percentile threshold), tone curve, and acceptable black ratio range. A stabilization retry + guardrail fallback to woodcut/bayer8 keeps results consistent.
+
+**Anti-text suffix** appended to all prompts: `"no text, no words, no letters, no writing, no signage, no captions, no watermark"`
 
 **Previous style exploration (still relevant):**
 
@@ -88,8 +99,8 @@ Both pipelines share the same LLM event selection (scene-only prompts), but each
 **Pipeline A (4-level):**
 1. Prepend daily style → FLUX.2 klein-9b → grayscale → caption (24px black bar, white text) → tone curve (1.2, 0.95) → quantize to 4 levels (0, 85, 170, 255) → 8-bit PNG
 
-**Pipeline B (1-bit):**
-1. Prepend woodcut style → SDXL → grayscale → tone curve (1.20, 0.92) → 8×8 Bayer ordered dithering → caption (16px white strip, black text) → 1-bit PNG
+**Pipeline B (1-bit, v3.3.0 — style-aware):**
+1. Pick style (djb2 hash of date+title+location % 6) → prepend style prompt → SDXL → grayscale → style-aware 1-bit conversion (Bayer or histogram threshold, with stabilization retry + guardrail fallback) → caption (16px white strip, black text) → 1-bit PNG
 
 **Why two pipelines:**
 - Some e-ink displays are mono-only and handle their own grayscale-to-mono conversion poorly (muddy results)
@@ -98,11 +109,11 @@ Both pipelines share the same LLM event selection (scene-only prompts), but each
 
 ---
 
-## 4. 1-Bit Conversion: 8×8 Bayer Ordered Dithering
+## 4. 1-Bit Conversion: Style-Aware (Bayer + Histogram Threshold)
 
-### Decision: Bayer 8×8 matrix (deterministic ordered dithering)
+### Decision: Style-aware conversion with Bayer 8×8 or histogram-percentile threshold
 
-This was the hardest technical challenge. We tried 7 different approaches before finding one that worked well.
+This was the hardest technical challenge. We tried 7 different approaches before finding Bayer dithering worked well. In v3.3.0, we added histogram-percentile threshold as a second mode — some styles (silhouettes, linocut, noir) suit hard threshold better than dithering, while woodcut and charcoal suit Bayer's dot texture.
 
 **Approaches tried and abandoned (in order):**
 
@@ -123,18 +134,34 @@ This was the hardest technical challenge. We tried 7 different approaches before
 - **Vintage aesthetic**: produces a classic halftone/newspaper look
 - **No scene corruption**: uses the same rich SDXL image as Pipeline A — no style injection needed
 
-**Implementation:**
+**Implementation (v3.3.0 — style-aware):**
+
+Two conversion modes, selected per style:
+
 ```
-Classic 8×8 Bayer threshold matrix (64 unique values, 0–63)
-Normalized to 0–255 range
-For each pixel: output = gray[x,y] > bayer_threshold[x%8, y%8] ? white : black
-Tone curve applied BEFORE dithering (contrast=1.20, gamma=0.92) to preserve midtones
-Caption drawn AFTER dithering so text stays crisp (not dithered)
+Bayer mode (woodcut):
+  Classic 8×8 Bayer threshold matrix (64 unique values, 0–63), normalized to 0–255
+  For each pixel: output = gray[x,y] > bayer_threshold[x%8, y%8] ? white : black
+  Tone curve applied BEFORE dithering to preserve midtones
+
+Threshold mode (silhouette, linocut, noir, pen_and_ink, charcoal_block):
+  Build histogram[256], walk from 0 (black) upward accumulating pixel count
+  When accumulated >= targetCount (floor(totalPixels * targetBlackPct)), that gray value = threshold T
+  Clamp T to [100, 220] — floor of 100 allows reducing black on dark SDXL output
+  Binarize: gray[i] <= T → black, else white
+
+Caption drawn AFTER conversion so text stays crisp (not dithered/thresholded).
 ```
+
+**Stabilization pipeline (`convert1Bit`):**
+1. First attempt with style's tone curve + conversion mode
+2. If black ratio outside [blackMin, blackMax]: retry once with adjusted params (±0.04 targetBlackPct or ±0.06 gamma)
+3. If still >0.10 outside range: guardrail fallback to woodcut/bayer8
 
 **Key technical bugs encountered:**
 - **Auto-threshold direction inversion**: `gray[i] < thresh` = black, so LOWER threshold = fewer black pixels. Initial implementation raised threshold when image was too dark — made it worse.
 - **Caption overlap**: Title centered across full 800px width collided with long location text. Fixed by centering title in the gap between location-end and date-start.
+- **Threshold clamp too high (v3.3.0)**: Initial clamp floor of 140 prevented histogram threshold from going low enough for dark SDXL output. Lowered to 100.
 
 ---
 
@@ -210,7 +237,7 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 
 **Cache key formats:**
 - 4-level: `fact4:v3:YYYY-MM-DD`
-- 1-bit: `fact1:v5:YYYY-MM-DD`
+- 1-bit: `fact1:v6:YYYY-MM-DD`
 
 **Why versioned keys:**
 - During development, changing the pipeline (model, style, dithering algorithm) required invalidating old cached images
@@ -386,6 +413,8 @@ FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model pro
 | User-configurable location | Hardcoded Naperville, IL | Single-user deployment; easy to change in code |
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
 | Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
+| Single art style for Pipeline B | 6-style rotation (v3.3.0) | Variety with style-aware conversion; each style picks Bayer or threshold mode for best results |
+| Newsprint dots style for Pipeline B | Replaced with charcoal_block | Newsprint ran too dark on SDXL output; charcoal_block produces better 1-bit results with threshold mode |
 | Shared FLUX.2 code with birthday pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
 | Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
 | Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |

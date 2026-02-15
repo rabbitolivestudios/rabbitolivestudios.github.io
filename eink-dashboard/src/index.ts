@@ -9,7 +9,7 @@ import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData } from "./device";
 
-const VERSION = "3.2.0";
+const VERSION = "3.3.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();

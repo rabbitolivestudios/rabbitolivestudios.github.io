@@ -11,7 +11,7 @@ Also serves weather data for Naperville, IL and a daily "On This Day" historical
 1. Fetches all historical events for today's date from Wikipedia
 2. An LLM (Llama 3.3 70B) picks the most visually dramatic event
 3. An image model generates an illustration of the scene *just before* the event, with a daily rotating art style
-4. Two versions are produced: a 4-level grayscale PNG (FLUX.2, rotating styles) and a 1-bit Bayer-dithered PNG (SDXL, woodcut)
+4. Two versions are produced: a 4-level grayscale PNG (FLUX.2, rotating styles) and a 1-bit PNG (SDXL, 6 rotating styles with style-aware conversion)
 
 Example: For the sinking of the Titanic, the image would show a grand ocean liner sailing calmly through dark waters, with a faint iceberg on the horizon. The text reads: **"Sinking of the Titanic"** / **"North Atlantic Ocean"** / **"Apr 14, 1912"**
 
@@ -22,11 +22,11 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 | `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings, indoor temp/humidity, battery level) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration (or birthday portrait on family birthdays) | 24 hours |
-| `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
+| `GET /fact1.png` | 800x480 1-bit "Moment Before" illustration (6 rotating styles) | 24 hours |
 | `GET /fact.json` | "On This Day" historical event (JSON) | 24 hours |
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
 | `GET /test.png?m=MM&d=DD` | Generate 4-level image for any date (e.g. `?m=10&d=20`) | none |
-| `GET /test1.png?m=MM&d=DD` | Generate 1-bit image for any date (e.g. `?m=7&d=4`) | none |
+| `GET /test1.png?m=MM&d=DD&style=NAME` | Generate 1-bit image for any date + optional style override (e.g. `?m=7&d=4&style=woodcut`) | none |
 | `GET /test-birthday.png?name=KEY` | Generate birthday portrait for a person (e.g. `?name=thiago&style=3`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /weather?test-device` | Weather dashboard with fake device data (22°C, 45%, battery 73%) | none |
@@ -126,9 +126,11 @@ Tone curve (contrast 1.2, gamma 0.95) → quantize to 4 levels
 8-bit grayscale PNG → KV cache (24h)
 ```
 
-### Pipeline B: 1-bit Bayer dithered (`/fact1.png`)
+### Pipeline B: Style-aware 1-bit (`/fact1.png`)
 
-Uses **SDXL** with hardcoded woodcut style (unchanged from v2).
+Uses **SDXL** with 6 rotating styles, each with style-appropriate 1-bit conversion (Bayer dithering or histogram threshold).
+
+**Styles**: woodcut (bayer8), silhouette_poster, linocut, bold_ink_noir, pen_and_ink, charcoal_block (all threshold). Style is picked deterministically by `djb2(date|title|location) % 6`. Test override: `/test1.png?style=NAME`.
 
 ```
 Wikipedia "On This Day" API
@@ -137,7 +139,10 @@ Wikipedia "On This Day" API
 Llama 3.3 70B (picks event, writes scene-only image prompt)
         │
         ▼
-Prepend woodcut style + anti-text suffix
+Pick style (djb2 hash of date+title+location % 6)
+        │
+        ▼
+Prepend style prompt + anti-text suffix
         │
         ▼
 SDXL (20 steps, guidance 6.5) → JPEG
@@ -149,10 +154,10 @@ Cloudflare Images (JPEG → PNG conversion)
 PNG decode → grayscale → center-crop → resize to 800x480
         │
         ▼
-Tone curve (contrast 1.20, gamma 0.92)
-        │
-        ▼
-8×8 Bayer ordered dithering → 1-bit pixel buffer
+Style-aware 1-bit conversion:
+  • Bayer mode: tone curve → 8×8 ordered dithering
+  • Threshold mode: tone curve → histogram-percentile threshold
+  • Stabilization retry + guardrail fallback if black ratio outside range
         │
         ▼
 Caption strip (16px white strip: location left, title center, date right)
@@ -204,9 +209,9 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 
 - **Image models**: FLUX.2 klein-9b (Pipeline A), SDXL (Pipeline B + fallback)
 - **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (scene-only prompts, no style baked in)
-- **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); hardcoded woodcut for Pipeline B
+- **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); 6-style rotation for Pipeline B (Woodcut / Silhouette / Linocut / Noir / Pen & Ink / Charcoal Block)
 - **4-level output**: 8-bit grayscale PNG quantized to 4 levels (0, 85, 170, 255)
-- **1-bit output**: True 1-bit PNG with 8×8 Bayer ordered dithering (vintage newspaper dot texture)
+- **1-bit output**: True 1-bit PNG with style-aware conversion (Bayer dithering or histogram threshold)
 - **PNG encoder/decoder**: Pure JavaScript using Web API `CompressionStream`/`DecompressionStream`
 - **Text rendering**: Custom 8x8 bitmap font (CP437), white-on-black (4-level) or black-on-white (1-bit)
 
