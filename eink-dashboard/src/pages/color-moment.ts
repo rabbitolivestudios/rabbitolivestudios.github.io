@@ -66,6 +66,18 @@ async function generateColorMoment(
   return pngToBase64(png);
 }
 
+/** Decode JPEG bytes to 800x480 RGB via Cloudflare Images. */
+async function jpegToRGB(env: Env, jpegBytes: Uint8Array): Promise<Uint8Array> {
+  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
+  const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
+  const decoded = await decodePNG(pngBytes);
+  if (!decoded.rgb) throw new Error("Expected color PNG but got grayscale");
+  const cropped = centerCropRGB(decoded.rgb, decoded.width, decoded.height, WIDTH, HEIGHT);
+  return (cropped.width === WIDTH && cropped.height === HEIGHT)
+    ? cropped.rgb
+    : resizeRGB(cropped.rgb, cropped.width, cropped.height, WIDTH, HEIGHT);
+}
+
 /** Generate a color birthday portrait, returns base64 PNG. */
 async function generateColorBirthday(
   env: Env,
@@ -73,22 +85,23 @@ async function generateColorBirthday(
   currentYear: number,
   styleOverride?: number,
 ): Promise<string> {
-  // Same FLUX.2 pipeline as mono birthday (ref photos, age, art style) but keep RGB
-  const jpegBytes = await generateBirthdayJPEG(env, person, currentYear, styleOverride);
+  let rgb: Uint8Array;
 
-  // JPEG → PNG via Cloudflare Images, then decode RGB
-  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
-  const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
-  const decoded = await decodePNG(pngBytes);
-
-  if (!decoded.rgb) {
-    throw new Error("Expected color PNG but got grayscale");
+  // Try FLUX.2 with reference photos (same pipeline as mono birthday)
+  try {
+    const jpegBytes = await generateBirthdayJPEG(env, person, currentYear, styleOverride);
+    rgb = await jpegToRGB(env, jpegBytes);
+  } catch (err) {
+    // Fallback: SDXL with text-only prompt (no reference photos)
+    console.error("Color birthday FLUX.2 failed, falling back to SDXL:", err);
+    const style = styleOverride !== undefined
+      ? getArtStyle(2020 + styleOverride)
+      : getArtStyle(currentYear);
+    const age = currentYear - person.birthYear;
+    const ageLine = age <= 12 ? `a ${age}-year-old child` : age <= 17 ? `a ${age}-year-old teenager` : `a ${age}-year-old person`;
+    const prompt = `artistic portrait of ${ageLine}, ${style.prompt}, head and shoulders, centered composition, looking at viewer, smiling, ${ANTI_TEXT_SUFFIX}`;
+    rgb = await generateAndDecodeColor(env, prompt);
   }
-
-  const cropped = centerCropRGB(decoded.rgb, decoded.width, decoded.height, WIDTH, HEIGHT);
-  const rgb = (cropped.width === WIDTH && cropped.height === HEIGHT)
-    ? cropped.rgb
-    : resizeRGB(cropped.rgb, cropped.width, cropped.height, WIDTH, HEIGHT);
 
   // Dither to Spectra 6 palette
   const indices = ditherFloydSteinberg(rgb, WIDTH, HEIGHT, SPECTRA6_PALETTE);
