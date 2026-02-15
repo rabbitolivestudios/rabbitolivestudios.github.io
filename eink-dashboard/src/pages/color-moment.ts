@@ -20,7 +20,6 @@ import { encodePNGIndexed } from "../png";
 import { spectra6CSS } from "../spectra6";
 import { WIDTH, HEIGHT } from "../image";
 
-const COLOR_STYLE_PREFIX = "screen print poster, flat inks, bold shapes, iconic composition, high contrast, minimal shading, no gradients, ";
 const ANTI_TEXT_SUFFIX = "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
 /** Encode PNG bytes to base64 in chunks. */
@@ -38,7 +37,7 @@ async function generateColorMoment(
   env: Env,
   moment: MomentBeforeData,
 ): Promise<string> {
-  const prompt = `${COLOR_STYLE_PREFIX}${moment.imagePrompt}, ${ANTI_TEXT_SUFFIX}`;
+  const prompt = `${moment.imagePrompt}, ${ANTI_TEXT_SUFFIX}`;
 
   let rgb: Uint8Array | null = null;
 
@@ -70,7 +69,7 @@ async function generateColorBirthday(
   birthday: { name: string; key: string },
 ): Promise<string> {
   // Simplified color birthday: generate with FLUX.2, posterize, dither
-  const prompt = `${COLOR_STYLE_PREFIX}portrait of a person named ${birthday.name}, celebratory, warm tones, ${ANTI_TEXT_SUFFIX}`;
+  const prompt = `portrait of a person named ${birthday.name}, celebratory, warm tones, ${ANTI_TEXT_SUFFIX}`;
 
   let rgb: Uint8Array;
   try {

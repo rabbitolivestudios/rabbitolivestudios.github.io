@@ -9,9 +9,15 @@
  */
 
 import type { Env, WeatherResponse, DailyEntry, DeviceData, NWSAlert } from "../types";
-import { getWeather } from "../weather";
+import { getWeatherForLocation } from "../weather";
 import { fetchDeviceData } from "../device";
 import { spectra6CSS } from "../spectra6";
+
+// E1002 is at the office — Chicago Loop (60606)
+const OFFICE_LAT = 41.8781;
+const OFFICE_LON = -87.6298;
+const OFFICE_ZIP = "60606";
+const OFFICE_NAME = "Chicago, IL";
 
 // --- Colored SVG weather icons ---
 
@@ -390,7 +396,7 @@ const TEST_ALERTS: Record<string, NWSAlert[]> = {
 
 export async function handleColorWeatherPage(env: Env, url: URL): Promise<Response> {
   const [weather, device] = await Promise.all([
-    getWeather(env),
+    getWeatherForLocation(env, OFFICE_LAT, OFFICE_LON, OFFICE_ZIP, OFFICE_NAME),
     fetchDeviceData(env),
   ]);
 
