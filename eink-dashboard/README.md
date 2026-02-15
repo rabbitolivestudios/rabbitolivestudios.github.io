@@ -21,12 +21,13 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 |----------|-------------|-------|
 | `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
-| `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration | 24 hours |
+| `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration (or birthday portrait on family birthdays) | 24 hours |
 | `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
 | `GET /fact.json` | "On This Day" historical event (JSON) | 24 hours |
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
 | `GET /test.png?m=MM&d=DD` | Generate 4-level image for any date (e.g. `?m=10&d=20`) | none |
 | `GET /test1.png?m=MM&d=DD` | Generate 1-bit image for any date (e.g. `?m=7&d=4`) | none |
+| `GET /test-birthday.png?name=KEY` | Generate birthday portrait for a person (e.g. `?name=thiago&style=3`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /health` | Status check | none |
 
@@ -149,6 +150,45 @@ Caption strip (16px white strip: location left, title center, date right)
 1-bit PNG encoder → KV cache (24h)
 ```
 
+### Pipeline C: Birthday Portrait (`/fact.png` on family birthdays)
+
+On family birthday dates, `/fact.png` generates an artistic portrait instead of the regular Moment Before illustration. `/fact1.png` is not affected and always shows regular content.
+
+```
+Chicago date → birthday check (9 family members)
+        │
+        ├─ No birthday → regular Pipeline A (unchanged)
+        │
+        └─ Birthday found:
+                │
+                ▼
+        Fetch up to 4 reference photos from R2 ("portraits/{key}_0.jpg" .. "{key}_3.jpg")
+                │
+                ▼
+        Pick art style (currentYear % 10 → 10 rotating styles)
+                │
+                ▼
+        FLUX.2 klein-9b (multipart FormData, guidance 7.0, reference images)
+                │
+                ▼
+        base64 decode → JPEG→PNG → grayscale → center-crop → resize to 800×480
+                │
+                ▼
+        Birthday caption (24px black bar: "Happy Birthday!" | "Name - age years" | style name)
+                │
+                ▼
+        Tone curve → quantize 4 levels → 8-bit PNG → KV cache (24h)
+```
+
+**Art styles** rotate yearly: Woodcut, Watercolor, Art Nouveau, Pop Art, Impressionist, Ukiyo-e, Art Deco, Pointillist, Pencil Sketch, Charcoal.
+
+**Reference photos** are stored in R2 (`eink-birthday-photos` bucket). Upload with:
+```bash
+npm run upload-photos
+```
+
+Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc. (max 4 per person, pre-resized to <512x512).
+
 ### Key Technical Details
 
 - **Image model**: `@cf/stabilityai/stable-diffusion-xl-base-1.0` (SDXL) via JSON API
@@ -185,9 +225,10 @@ Caption strip (16px white strip: location left, title center, date right)
 
 | Binding | Service | Purpose |
 |---------|---------|---------|
-| `env.AI` | Workers AI | LLM + image generation |
+| `env.AI` | Workers AI | LLM + image generation (SDXL + FLUX.2) |
 | `env.IMAGES` | Cloudflare Images | JPEG → PNG conversion |
 | `env.CACHE` | KV Namespace | Response caching (24h) |
+| `env.PHOTOS` | R2 Bucket | Birthday reference photos |
 
 ---
 

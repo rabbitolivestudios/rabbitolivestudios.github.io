@@ -295,7 +295,55 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 
 ---
 
-## 13. What We Didn't Do (and why)
+## 13. Birthday Portrait Generation (v3.0.0)
+
+### Decision: FLUX.2 klein-9b with reference photos from R2
+
+On family birthday dates, `/fact.png` generates an artistic portrait using FLUX.2 with up to 4 reference photos stored in R2. Each year uses a different art style (10 styles rotating by `year % 10`). `/fact1.png` always shows regular Moment Before content.
+
+**Model choice:**
+
+| Model | Result |
+|-------|--------|
+| `flux-2-klein-4b` | Fast (4 steps) but poor likeness, generic faces |
+| **`flux-2-klein-9b`** | **Much better likeness with reference photos, still 4 steps** |
+
+FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model produces significantly better results with reference images despite the same step count.
+
+**API:** FLUX.2 requires multipart FormData (not JSON like SDXL). Reference images are sent as `input_image_0` through `input_image_3`. The FormData is serialized via `new Response(form)` to extract body stream and content-type for Workers AI.
+
+**Art styles (10, rotating yearly):**
+
+| # | Style | Notes |
+|---|-------|-------|
+| 0 | Woodcut | Same style as Moment Before — bold, high contrast |
+| 1 | Watercolor | Must be "bold, rich saturated washes" — delicate/soft washes are too faint after quantization |
+| 2 | Art Nouveau | Mucha-inspired, flows well |
+| 3 | Pop Art | Warhol-inspired, flat vivid colors |
+| 4 | Impressionist | Visible brushstrokes, Monet-inspired |
+| 5 | Ukiyo-e | Japanese woodblock style |
+| 6 | Art Deco | Geometric patterns, elegant |
+| 7 | Pointillist | Seurat-inspired, tiny dots |
+| 8 | Pencil Sketch | Originally Renaissance — replaced because chiaroscuro was too dark after 4-level quantization |
+| 9 | Charcoal | Expressive strokes, deep shadows |
+
+**Prompt engineering lessons:**
+- **"no text, no words, no letters, no writing"** — FLUX.2 aggressively bakes text into images. Names like "LUCAS" or "ALVARO" appeared in the generated portraits without this.
+- **Age descriptions matter**: "elderly person" caused the model to exaggerate wrinkles and age features. Changed to neutral `"a {age}-year-old person"` for adults.
+- **"head and shoulders, centered composition, looking at viewer, smiling"** — this framing produces the best e-ink portraits
+- **Accent stripping**: Names like "Sônia" must be stripped to ASCII for the 8x8 bitmap font via NFD normalization
+
+**Content safety filter (error 3030):** FLUX.2 occasionally flags outputs. The portrait prompt ("head and shoulders, looking at viewer, smiling") is safer than broader portrait prompts. Retry once on failure.
+
+**Fallbacks:**
+1. R2 photo missing → text-only portrait prompt (no reference image)
+2. FLUX.2 fails after retry → fall back to regular Moment Before pipeline
+
+**Cache key:** `birthday:v1:YYYY-MM-DD` (separate from Moment Before cache keys)
+
+---
+
+## 14. What We Didn't Do (and why)
 
 | Consideration | Decision | Reason |
 |---------------|----------|--------|
