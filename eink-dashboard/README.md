@@ -1,7 +1,7 @@
 # E-Ink "Moment Before" Dashboard
 
 A Cloudflare Workers backend for the **reTerminal E1001** (ESP32-S3, 7.5" ePaper, 800x480).
-Every day it generates an AI ink illustration depicting the **moment just before** a famous historical event — the viewer sees the scene, the location, and the date, but must guess what's about to happen.
+Every day it generates an AI illustration depicting the **moment just before** a famous historical event — the viewer sees the scene, the location, and the date, but must guess what's about to happen.
 
 Also serves weather data for Naperville, IL and a daily "On This Day" historical fact — all free, no API keys required.
 
@@ -10,8 +10,8 @@ Also serves weather data for Naperville, IL and a daily "On This Day" historical
 **"Moment Before"** — each day, the system:
 1. Fetches all historical events for today's date from Wikipedia
 2. An LLM (Llama 3.3 70B) picks the most visually dramatic event
-3. FLUX-2-dev generates a black ink pen editorial illustration of the scene *just before* the event
-4. The image is served as an 8-bit grayscale PNG with text overlay
+3. SDXL generates a woodcut-style illustration of the scene *just before* the event
+4. Two versions are produced: a 4-level grayscale PNG and a 1-bit Bayer-dithered PNG
 
 Example: For the sinking of the Titanic, the image would show a grand ocean liner sailing calmly through dark waters, with a faint iceberg on the horizon. The text reads: **"Sinking of the Titanic"** / **"North Atlantic Ocean"** / **"Apr 14, 1912"**
 
@@ -19,12 +19,14 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
-| `GET /weather` | 800x480 HTML weather dashboard (metric, emoji icons) | 30 min |
+| `GET /weather` | 800x480 HTML weather dashboard (metric, SVG icons) | 30 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
-| `GET /fact.png` | 800x480 grayscale "Moment Before" illustration | 24 hours |
+| `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration | 24 hours |
+| `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
 | `GET /fact.json` | "On This Day" historical event (JSON) | 24 hours |
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
-| `GET /test.png?m=MM&d=DD` | Generate image for any date (e.g. `?m=10&d=20`) | none |
+| `GET /test.png?m=MM&d=DD` | Generate 4-level image for any date (e.g. `?m=10&d=20`) | none |
+| `GET /test1.png?m=MM&d=DD` | Generate 1-bit image for any date (e.g. `?m=7&d=4`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast (metric) | 30 min |
 | `GET /health` | Status check | none |
 
@@ -80,43 +82,82 @@ Your worker URL will be printed. The daily cron runs at 10:00 UTC (4:00 AM Chica
 
 ```bash
 curl -o fact.png https://YOUR-URL.workers.dev/fact.png
-open fact.png
+curl -o fact1.png https://YOUR-URL.workers.dev/fact1.png
+open fact.png fact1.png
 ```
 
 ---
 
-## Image Pipeline
+## Image Pipelines
+
+Two pipelines share the same LLM event selection and SDXL image generation, then diverge for output processing.
+
+### Pipeline A: 4-level grayscale (`/fact.png`)
 
 ```
 Wikipedia "On This Day" API
         │
         ▼
-Llama 3.3 70B (picks event, writes scene + image prompt)
+Llama 3.3 70B (picks event, writes scene + woodcut image prompt)
         │
         ▼
-FLUX-2-dev (20 steps, multipart API) → JPEG
+SDXL (20 steps, guidance 7.0) → JPEG
         │
         ▼
 Cloudflare Images (JPEG → PNG conversion)
         │
         ▼
-PNG decode → grayscale → resize to 800x480
+PNG decode → grayscale → center-crop → resize to 800x480
         │
         ▼
-Text overlay (title centered, location left, date right)
+Caption bar (24px black bar: location left, title center, date right)
         │
         ▼
-8-bit grayscale PNG encoder → KV cache (24h)
+Tone curve (contrast 1.2, gamma 0.95) → quantize to 4 levels
+        │
+        ▼
+8-bit grayscale PNG → KV cache (24h)
+```
+
+### Pipeline B: 1-bit Bayer dithered (`/fact1.png`)
+
+```
+Wikipedia "On This Day" API
+        │
+        ▼
+Llama 3.3 70B (picks event, writes scene + woodcut image prompt)
+        │
+        ▼
+SDXL (20 steps, guidance 6.5) → JPEG
+        │
+        ▼
+Cloudflare Images (JPEG → PNG conversion)
+        │
+        ▼
+PNG decode → grayscale → center-crop → resize to 800x480
+        │
+        ▼
+Tone curve (contrast 1.20, gamma 0.92)
+        │
+        ▼
+8×8 Bayer ordered dithering → 1-bit pixel buffer
+        │
+        ▼
+Caption strip (16px white strip: location left, title center, date right)
+        │
+        ▼
+1-bit PNG encoder → KV cache (24h)
 ```
 
 ### Key Technical Details
 
-- **Image model**: `@cf/black-forest-labs/flux-2-dev` via multipart FormData
+- **Image model**: `@cf/stabilityai/stable-diffusion-xl-base-1.0` (SDXL) via JSON API
 - **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
-- **Output**: 8-bit grayscale PNG (no dithering — e-ink display handles conversion)
-- **Art style**: Black ink pen editorial illustration with cross-hatching
+- **Art style**: Hand-carved woodcut / linocut relief print with sweeping gouge strokes
+- **4-level output**: 8-bit grayscale PNG quantized to 4 levels (0, 85, 170, 255)
+- **1-bit output**: True 1-bit PNG with 8×8 Bayer ordered dithering (vintage newspaper dot texture)
 - **PNG encoder/decoder**: Pure JavaScript using Web API `CompressionStream`/`DecompressionStream`
-- **Text rendering**: Custom 8x8 bitmap font (CP437), scalable, white-on-black backing
+- **Text rendering**: Custom 8x8 bitmap font (CP437), white-on-black (4-level) or black-on-white (1-bit)
 
 ---
 
@@ -129,7 +170,7 @@ Text overlay (title centered, location left, date right)
 │  (ePaper)    │◀────│  ┌────────────────┐  │     └──────────────┘
 └─────────────┘     │  │ Workers AI     │  │     ┌──────────────┐
                      │  │ • Llama 3.3   │  │────▶│  Open-Meteo   │
-                     │  │ • FLUX-2-dev  │  │     │  (weather)    │
+                     │  │ • SDXL        │  │     │  (weather)    │
                      │  ├────────────────┤  │     └──────────────┘
                      │  │ Images API     │  │
                      │  │ (JPEG→PNG)     │  │
@@ -197,12 +238,11 @@ The display will automatically cycle between pages every 15 minutes. Each page e
 
 | Problem | Solution |
 |---------|----------|
-| 503 on `/fact.png` | Check `npx wrangler tail` for errors. Common: KV namespace ID mismatch |
-| Stale image | Cache key uses Chicago timezone. Delete old keys: `npx wrangler kv key list --namespace-id=ID` |
+| 503 on `/fact.png` or `/fact1.png` | Check `npx wrangler tail` for errors. Common: KV namespace ID mismatch |
+| Stale image | Cache key uses Chicago timezone. Bump cache key version or delete old keys: `npx wrangler kv key list --namespace-id=ID` |
 | Stale image in browser | Browser caches for 24h. Hard refresh with Cmd+Shift+R |
 | Weather not updating on device | Check the Interval setting in SenseCraft HMI and that the device is online |
-| Pen/pencil artifacts | The prompt includes "no pens, no drawing tools" but FLUX occasionally adds them. Regenerate. |
-| Image too large for KV | KV values max 25MB. Current images are ~150-230KB (well within limits) |
+| Image too large for KV | KV values max 25MB. Current images are ~20-230KB (well within limits) |
 | Wrong location weather | Edit `src/weather.ts` — coordinates are hardcoded for Naperville, IL (60540) |
 | Emoji not showing on display | ESP32-S3 renderer doesn't support emoji. Use inline SVG or text labels. |
 | Faint text on display | All text must be pure black (#000). Grays are invisible on e-ink. |
