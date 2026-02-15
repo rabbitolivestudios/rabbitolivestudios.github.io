@@ -19,7 +19,7 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
-| `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings) | 15 min |
+| `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings, indoor temp/humidity, battery level) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration (or birthday portrait on family birthdays) | 24 hours |
 | `GET /fact1.png` | 800x480 1-bit Bayer-dithered "Moment Before" illustration | 24 hours |
@@ -29,6 +29,7 @@ Example: For the sinking of the Titanic, the image would show a grand ocean line
 | `GET /test1.png?m=MM&d=DD` | Generate 1-bit image for any date (e.g. `?m=7&d=4`) | none |
 | `GET /test-birthday.png?name=KEY` | Generate birthday portrait for a person (e.g. `?name=thiago&style=3`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
+| `GET /weather?test-device` | Weather dashboard with fake device data (22°C, 45%, battery 73%) | none |
 | `GET /health` | Status check | none |
 
 ## Live URL
@@ -226,9 +227,11 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
                      │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
                      │  ├────────────────┤  │     │  (alerts)     │
                      │  │ KV Cache       │  │     └──────────────┘
-                     │  │ (24h TTL)      │  │
-                     │  └────────────────┘  │
-                     └──────────────────────┘
+                     │  │ (24h TTL)      │  │     ┌──────────────┐
+                     │  └────────────────┘  │────▶│  SenseCraft   │
+                     └──────────────────────┘     │  HMI API      │
+                                                  │  (device data) │
+                                                  └──────────────┘
 ```
 
 ### Cloudflare Bindings

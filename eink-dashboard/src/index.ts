@@ -7,8 +7,9 @@ import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
+import { fetchDeviceData } from "./device";
 
-const VERSION = "3.1.0";
+const VERSION = "3.2.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -254,6 +255,10 @@ async function handleScheduled(env: Env): Promise<void> {
     // 5. Warm weather cache
     await getWeather(env);
     console.log("Cron: warmed weather cache");
+
+    // 6. Warm device data cache
+    await fetchDeviceData(env);
+    console.log("Cron: warmed device data cache");
   } catch (err) {
     console.error("Cron error:", err);
   }

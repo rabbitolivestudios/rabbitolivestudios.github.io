@@ -107,6 +107,15 @@ export interface FactResponse {
   source: string;
 }
 
+// --- Device types ---
+
+export interface DeviceData {
+  battery_level: number;       // 0-100
+  battery_charging: boolean;
+  indoor_temp_c: number;       // rounded to integer
+  indoor_humidity_pct: number; // rounded to integer
+}
+
 // --- KV cache wrapper ---
 
 export interface CachedValue<T> {

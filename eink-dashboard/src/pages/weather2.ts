@@ -1,5 +1,6 @@
-import type { Env, WeatherResponse, DailyEntry } from "../types";
+import type { Env, WeatherResponse, DailyEntry, DeviceData } from "../types";
 import { getWeather } from "../weather";
+import { fetchDeviceData } from "../device";
 
 // Inline SVG weather icons — black on transparent, designed for e-ink
 const ICONS: Record<string, string> = {
@@ -77,7 +78,30 @@ const ICONS: Record<string, string> = {
     <path d="M3 16h20a3 3 0 1 1-3 3"/>
     <path d="M3 22h12a3 3 0 1 0-3-3"/>
   </svg>`,
+  house: `<svg viewBox="0 0 32 32" fill="#000">
+    <path d="M16 3L2 16h4v13h8v-9h4v9h8V16h4L16 3z"/>
+  </svg>`,
+  droplet: `<svg viewBox="0 0 32 32" fill="#000">
+    <path d="M16 3C16 3 6 16 6 22a10 10 0 0 0 20 0C26 16 16 3 16 3z"/>
+  </svg>`,
 };
+
+function batteryIcon(level: number, charging: boolean, size: number): string {
+  const bodyW = 24;
+  const bodyH = 12;
+  const bodyX = 2;
+  const bodyY = 10;
+  const fillW = Math.max(0, Math.min(bodyW, Math.round(bodyW * level / 100)));
+  const bolt = charging
+    ? `<polygon points="16,8 12,16 15,16 13,24 20,14 16,14 18,8" fill="#fff"/>`
+    : "";
+  return `<span style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle"><svg viewBox="0 0 32 32" fill="none">
+    <rect x="${bodyX}" y="${bodyY}" width="${bodyW}" height="${bodyH}" rx="2" stroke="#000" stroke-width="2" fill="none"/>
+    <rect x="${bodyX + 1}" y="${bodyY + 1}" width="${fillW}" height="${bodyH - 2}" fill="#000"/>
+    <rect x="${bodyX + bodyW}" y="${bodyY + 3}" width="3" height="${bodyH - 6}" fill="#000" rx="1"/>
+    ${bolt}
+  </svg></span>`;
+}
 
 function icon(key: string, size: number): string {
   return `<span style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle">${ICONS[key] ?? ICONS.clear}</span>`;
@@ -152,7 +176,7 @@ function getRainWarning(w: WeatherResponse): string | null {
   return null;
 }
 
-function renderHTML(w: WeatherResponse): string {
+function renderHTML(w: WeatherResponse, device: DeviceData | null = null): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -168,10 +192,10 @@ function renderHTML(w: WeatherResponse): string {
 
   const cur = w.current;
 
-  // Wind string
+  // Wind string (separate line to avoid wrapping)
   let windStr = `${icon("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh} km/h`;
   if (cur.wind_gusts_kmh > cur.wind_kmh + 10) {
-    windStr += ` | Gusts ${cur.wind_gusts_kmh}`;
+    windStr += ` | Gusts ${cur.wind_gusts_kmh} km/h`;
   }
 
   // Sunrise/sunset
@@ -237,11 +261,13 @@ function renderHTML(w: WeatherResponse): string {
   }
 
   .header {
-    display: flex; justify-content: space-between; align-items: baseline;
+    display: flex; justify-content: space-between; align-items: flex-start;
     margin-bottom: 12px;
   }
   .location { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
+  .header-right { text-align: right; }
   .datetime { font-size: 16px; font-weight: 500; }
+  .battery { font-size: 15px; font-weight: 500; margin-top: 2px; }
 
   .current {
     display: flex; align-items: center; gap: 20px;
@@ -253,10 +279,11 @@ function renderHTML(w: WeatherResponse): string {
   .cur-condition { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
   .cur-meta { font-size: 18px; font-weight: 500; }
   .cur-sun { font-size: 18px; font-weight: 500; margin-top: 2px; }
+  .cur-indoor { font-size: 16px; font-weight: 500; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
 
   .divider {
     border: none; border-top: 2px solid #000;
-    margin: 14px 0;
+    margin: 10px 0;
   }
 
   .section-label {
@@ -265,7 +292,7 @@ function renderHTML(w: WeatherResponse): string {
   }
 
   .daily {
-    display: flex; gap: 12px; margin-bottom: 14px;
+    display: flex; gap: 12px; margin-bottom: 10px;
   }
   .day {
     flex: 1; text-align: center;
@@ -305,7 +332,10 @@ function renderHTML(w: WeatherResponse): string {
 <body>
   <div class="header">
     <div class="location">${w.location.name.toUpperCase()}</div>
-    <div class="datetime">${dateStr} | ${timeStr}</div>
+    <div class="header-right">
+      <div class="datetime">${dateStr} | ${timeStr}</div>
+      ${device ? `<div class="battery">${batteryIcon(device.battery_level, device.battery_charging, 20)} ${device.battery_level}%</div>` : ""}
+    </div>
   </div>
 
   <div class="current">
@@ -314,8 +344,10 @@ function renderHTML(w: WeatherResponse): string {
     <div class="cur-details">
       <div class="cur-condition">${cur.condition.label}</div>
       <div class="cur-meta">
-        Feels like ${cur.feels_like_c}°C | Humidity ${cur.humidity_pct}% | ${windStr}
+        Feels like ${cur.feels_like_c}°C | ${icon("droplet", 18)} ${cur.humidity_pct}%
       </div>
+      <div class="cur-meta">${windStr}</div>
+      ${device ? `<div class="cur-indoor">${icon("house", 20)}<span>${device.indoor_temp_c}°C</span><span>|</span>${icon("droplet", 16)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
       ${sunLine}
     </div>
   </div>
@@ -349,7 +381,10 @@ const TEST_ALERTS: Record<string, import("../types").NWSAlert[]> = {
 };
 
 export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response> {
-  const weather = await getWeather(env);
+  const [weather, device] = await Promise.all([
+    getWeather(env),
+    fetchDeviceData(env),
+  ]);
 
   // ?test-alert=tornado|winter|flood injects fake alerts for testing
   const testAlert = url.searchParams.get("test-alert");
@@ -365,8 +400,12 @@ export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response>
   if (testTemp !== null) {
     weather.current.temp_c = parseInt(testTemp, 10);
   }
+  // ?test-device injects fake device data
+  const testDevice: DeviceData | null = url.searchParams.has("test-device")
+    ? { battery_level: 73, battery_charging: false, indoor_temp_c: 22, indoor_humidity_pct: 45 }
+    : device;
 
-  const html = renderHTML(weather);
+  const html = renderHTML(weather, testDevice);
 
   return new Response(html, {
     headers: {
