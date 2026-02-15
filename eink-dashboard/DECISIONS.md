@@ -481,7 +481,8 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 | Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
 | Single art style for Pipeline B | 6-style rotation (v3.3.0) | Variety with style-aware conversion; each style picks Bayer or threshold mode for best results |
 | Newsprint dots style for Pipeline B | Replaced with charcoal_block | Newsprint ran too dark on SDXL output; charcoal_block produces better 1-bit results with threshold mode |
-| Shared FLUX.2 code with birthday pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
+| Shared FLUX.2 code with Moment Before pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
+| Shared `callFluxPortrait` between mono and color birthday | Shared (exported from birthday-image.ts) | Color birthday previously used `generateBirthdayJPEG` wrapper that duplicated retry logic and age description. Now both pipelines call `callFluxPortrait` directly with explicit retry loops at the call site. |
 | Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
 | Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
 | Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |

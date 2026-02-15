@@ -14,7 +14,7 @@ import { getTodayEvents } from "../fact";
 import { getOrGenerateMoment, generateMomentBefore } from "../moment";
 import { getBirthdayToday, getBirthdayByKey, getArtStyle } from "../birthday";
 import type { BirthdayPerson } from "../birthday";
-import { generateBirthdayJPEG } from "../birthday-image";
+import { callFluxPortrait, fetchReferencePhotos, ageDescription } from "../birthday-image";
 import { generateAndDecodeColorFlux, generateAndDecodeColor, centerCropRGB, resizeRGB } from "../image-color";
 import { decodePNG } from "../png-decode";
 import { ditherFloydSteinberg } from "../dither-spectra6";
@@ -85,20 +85,29 @@ async function generateColorBirthday(
   currentYear: number,
   styleOverride?: number,
 ): Promise<string> {
-  let rgb: Uint8Array;
+  const style = styleOverride !== undefined
+    ? getArtStyle(2020 + styleOverride)
+    : getArtStyle(currentYear);
 
-  // Try FLUX.2 with reference photos (same pipeline as mono birthday)
-  try {
-    const jpegBytes = await generateBirthdayJPEG(env, person, currentYear, styleOverride);
-    rgb = await jpegToRGB(env, jpegBytes);
-  } catch (err) {
-    // Fallback: SDXL with text-only prompt (no reference photos)
-    console.error("Color birthday FLUX.2 failed, falling back to SDXL:", err);
-    const style = styleOverride !== undefined
-      ? getArtStyle(2020 + styleOverride)
-      : getArtStyle(currentYear);
-    const age = currentYear - person.birthYear;
-    const ageLine = age <= 12 ? `a ${age}-year-old child` : age <= 17 ? `a ${age}-year-old teenager` : `a ${age}-year-old person`;
+  const photos = await fetchReferencePhotos(env, person.key);
+  console.log(`Color birthday: found ${photos.length} reference photo(s) for ${person.key}`);
+
+  // Try FLUX.2 with reference photos (2 attempts)
+  let rgb: Uint8Array | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
+      rgb = await jpegToRGB(env, jpegBytes);
+      break;
+    } catch (err) {
+      console.error(`Color birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
+    }
+  }
+
+  // Fallback: SDXL with text-only prompt (no reference photos — API limitation)
+  if (!rgb) {
+    console.log("Color birthday: FLUX.2 failed, falling back to SDXL");
+    const ageLine = ageDescription(person, currentYear);
     const prompt = `artistic portrait of ${ageLine}, ${style.prompt}, head and shoulders, centered composition, looking at viewer, smiling, ${ANTI_TEXT_SUFFIX}`;
     rgb = await generateAndDecodeColor(env, prompt);
   }

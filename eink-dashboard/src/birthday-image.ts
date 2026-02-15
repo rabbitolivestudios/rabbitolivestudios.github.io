@@ -26,12 +26,12 @@ const BAR_H = 24;
 const BAR_PAD = 8;
 
 /** Strip accents/diacritics for ASCII-only bitmap font. */
-function stripAccents(s: string): string {
+export function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 /** Build an age description for the prompt. */
-function ageDescription(person: BirthdayPerson, currentYear: number): string {
+export function ageDescription(person: BirthdayPerson, currentYear: number): string {
   const age = currentYear - person.birthYear;
   if (age <= 12) return `a ${age}-year-old child`;
   if (age <= 17) return `a ${age}-year-old teenager`;
@@ -61,7 +61,7 @@ export async function generateBirthdayImage(
   let jpegBytes: Uint8Array | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      jpegBytes = await callFlux(env, person, style.prompt, photos, currentYear);
+      jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
       break;
     } catch (err) {
       console.error(`Birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
@@ -137,7 +137,7 @@ export async function fetchReferencePhotos(env: Env, key: string): Promise<Uint8
  * Steps are fixed at 4 for klein models.
  * Supports up to 4 reference images for better likeness.
  */
-async function callFlux(
+export async function callFluxPortrait(
   env: Env,
   person: BirthdayPerson,
   stylePrompt: string,
@@ -191,41 +191,6 @@ async function callFlux(
   }
 
   throw new Error(`Unexpected FLUX.2 response type: ${typeof result}`);
-}
-
-/**
- * Generate a birthday portrait JPEG using FLUX.2 with reference photos.
- * Returns raw JPEG bytes (before any grayscale/color processing).
- * Used by both the mono and color birthday pipelines.
- */
-export async function generateBirthdayJPEG(
-  env: Env,
-  person: BirthdayPerson,
-  currentYear: number,
-  styleOverride?: number,
-): Promise<Uint8Array> {
-  const style = styleOverride !== undefined
-    ? getArtStyle(2020 + styleOverride)
-    : getArtStyle(currentYear);
-
-  const photos = await fetchReferencePhotos(env, person.key);
-  console.log(`Color birthday: found ${photos.length} reference photo(s) for ${person.key}`);
-
-  let jpegBytes: Uint8Array | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      jpegBytes = await callFlux(env, person, style.prompt, photos, currentYear);
-      break;
-    } catch (err) {
-      console.error(`Color birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
-      if (attempt === 0) continue;
-    }
-  }
-
-  if (!jpegBytes) {
-    throw new Error("FLUX.2 portrait generation failed after retries");
-  }
-  return jpegBytes;
 }
 
 /**
