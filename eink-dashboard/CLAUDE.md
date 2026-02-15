@@ -84,9 +84,9 @@ This project has two independent image pipelines. They share the LLM event selec
 | | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) |
 |---|---|---|
 | Model | FLUX.2 klein-9b | SDXL |
-| Style | Daily rotation (Woodcut/Pencil/Charcoal) | Hardcoded woodcut |
-| Output | 4-level grayscale | 1-bit Bayer dithered |
-| Cache key | `fact4:v3:YYYY-MM-DD` | `fact1:v5:YYYY-MM-DD` |
+| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) |
+| Output | 4-level grayscale | 1-bit (Bayer or threshold) |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` |
 
 ---
 
