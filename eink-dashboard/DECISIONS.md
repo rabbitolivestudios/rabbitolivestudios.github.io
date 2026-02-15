@@ -4,9 +4,9 @@ This document records the key decisions made during development of the "Moment B
 
 ---
 
-## 1. Image Generation Model
+## 1. Image Generation Models
 
-### Decision: SDXL (Stable Diffusion XL)
+### Decision: FLUX.2 klein-9b (Pipeline A) + SDXL (Pipeline B + fallback)
 
 **Tried:**
 | Model | Result |
@@ -14,23 +14,47 @@ This document records the key decisions made during development of the "Moment B
 | `flux-1-schnell` (4 steps) | Fast but low quality, washed-out details |
 | `flux-2-dev` (20 steps) | Stunning ink illustrations, rich detail — but requires multipart FormData API |
 | `stable-diffusion-xl-base-1.0` (20 steps) | Great woodcut/linocut style, simpler JSON API |
+| **`flux-2-klein-9b` (4 steps)** | **Better illustrations than SDXL, fast (distilled), multipart FormData API** |
 
-**Why SDXL:**
-- Produces excellent woodcut/linocut illustrations with strong contrast
-- Uses standard JSON API (not multipart FormData like FLUX-2 models)
+**v3.1.0 change — FLUX.2 for Pipeline A:**
+- FLUX.2 klein-9b produces better, more detailed illustrations than SDXL
+- Steps fixed at 4 (distilled model) — faster than SDXL's 20 steps
+- Requires multipart FormData API (same as birthday portraits)
+- Falls back to SDXL with woodcut style if FLUX.2 fails twice
+- Pipeline B stays on SDXL — the Bayer dithered output works well with SDXL's woodcut style
+
+**SDXL (Pipeline B + fallback):**
 - `@cf/stabilityai/stable-diffusion-xl-base-1.0` on Workers AI
 - 20 steps is the Workers AI maximum (steps > 20 causes error 5006)
-- ~4-6 seconds for image generation — acceptable for a daily image
-
-**Note:** SDXL does NOT support `negative_prompt` — all style constraints must be embedded in the positive prompt (e.g., "AVOID: stippling, halftone dots, fine crosshatching").
+- Uses standard JSON API
+- Does NOT support `negative_prompt` — all style constraints must be embedded in the positive prompt
 
 ---
 
-## 2. Art Style: Woodcut / Linocut Relief Print
+## 2. Art Style: Daily Rotation + Scene-Only Prompts
 
-### Decision: "Hand-carved woodcut print, linocut relief print, vintage newspaper woodcut illustration"
+### Decision: LLM writes scene-only prompts; style prepended per-pipeline
 
-**Tried:**
+**v3.1.0 change — scene-only LLM + per-pipeline style:**
+- Previously, the LLM `SYSTEM_PROMPT` baked woodcut style into the image prompt
+- Now the LLM writes scene-only prompts (subject, setting, lighting, mood — no rendering technique)
+- Each pipeline prepends its own style: Pipeline A rotates daily, Pipeline B uses hardcoded woodcut
+- This is cleaner — style is a rendering concern, not an LLM concern
+
+**Pipeline A daily rotation** (`dayOfYear % 3`):
+
+| # | Style | Prompt prefix |
+|---|-------|---------------|
+| 0 | Woodcut | `hand-carved woodcut print, bold U-gouge marks, high contrast black and white, sweeping curved gouge strokes, large solid black ink areas with minimal midtones` |
+| 1 | Pencil Sketch | `detailed graphite pencil sketch, fine cross-hatching, full tonal range, on white paper` |
+| 2 | Charcoal | `dramatic charcoal drawing, expressive strokes, deep shadows, textured paper` |
+
+**Pipeline B** uses a hardcoded `WOODCUT_STYLE` constant (same woodcut style as before, just moved from LLM to code).
+
+**Anti-text suffix** appended to all prompts: `"no text, no words, no letters, no writing"`
+
+**Previous style exploration (still relevant):**
+
 | Style | Result on e-ink |
 |-------|-----------------|
 | Graphite pencil with soft shading | Beautiful raw image, but terrible after any 1-bit conversion — "dot soup" |
@@ -39,18 +63,11 @@ This document records the key decisions made during development of the "Moment B
 | Etch-A-Sketch / minimalist cityscape | Style keywords hijacked the scene — model generated generic cityscapes regardless of historical event |
 | **Woodcut / linocut with gouge strokes** | **Perfect — bold, high-contrast, dramatic, reads beautifully on e-ink** |
 
-**Why woodcut/linocut:**
+**Why woodcut remains the default (Pipeline B and fallback):**
 - Inherently high-contrast: solid black ink areas with carved white channels
 - "Sweeping curved gouge strokes" creates organic texture (not mechanical hatching)
 - "Large solid black ink areas with minimal midtones" translates perfectly to e-ink
 - Works for both 4-level grayscale (quantized tonal regions) and 1-bit dithered (dot texture)
-- Consistent dramatic aesthetic across all historical subjects
-
-**Prompt engineering:**
-- Must include "no pens, no pencils, no drawing tools, no art supplies, no hands" — SDXL sometimes draws art tools in the scene
-- "Visible U-gouge and V-gouge carving marks" produces authentic woodcut texture
-- "Two to three tonal regions only" prevents muddy midtones
-- "AVOID: stippling, halftone dots, fine crosshatching, pencil shading, airbrush gradients" keeps the style on-target
 - Bold style with solid blacks looks BETTER on e-ink than lighter/delicate alternatives
 
 ---
@@ -66,13 +83,13 @@ The project produces two versions of each day's image:
 | `/fact.png` | Pipeline A | 4-level grayscale (8-bit PNG) | Displays with grayscale support |
 | `/fact1.png` | Pipeline B | 1-bit Bayer dithered (1-bit PNG) | Mono e-ink displays |
 
-Both pipelines share the same LLM event selection and SDXL image generation, but each makes its own LLM + AI call (different events are possible). They diverge at post-processing:
+Both pipelines share the same LLM event selection (scene-only prompts), but each prepends its own art style, uses its own image model, and makes its own LLM + AI call (different events are possible). They diverge at style injection and post-processing:
 
 **Pipeline A (4-level):**
-1. Grayscale → caption (24px black bar, white text) → tone curve (1.2, 0.95) → quantize to 4 levels (0, 85, 170, 255) → 8-bit PNG
+1. Prepend daily style → FLUX.2 klein-9b → grayscale → caption (24px black bar, white text) → tone curve (1.2, 0.95) → quantize to 4 levels (0, 85, 170, 255) → 8-bit PNG
 
 **Pipeline B (1-bit):**
-1. Grayscale → tone curve (1.20, 0.92) → 8×8 Bayer ordered dithering → caption (16px white strip, black text) → 1-bit PNG
+1. Prepend woodcut style → SDXL → grayscale → tone curve (1.20, 0.92) → 8×8 Bayer ordered dithering → caption (16px white strip, black text) → 1-bit PNG
 
 **Why two pipelines:**
 - Some e-ink displays are mono-only and handle their own grayscale-to-mono conversion poorly (muddy results)
@@ -169,10 +186,11 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 - Good at following structured output instructions (JSON)
 - Creative enough to pick visually interesting events and write compelling scene descriptions
 
-**Single prompt design:**
-- One `SYSTEM_PROMPT` constant with woodcut style guidance baked in
-- The LLM writes both the scene description and the SDXL image prompt
-- Both pipelines use the same LLM output (each makes its own call, so different events are possible)
+**Scene-only prompt design:**
+- One `SYSTEM_PROMPT` constant that instructs the LLM to write scene-only prompts (no art style)
+- The LLM writes scene descriptions covering subject, setting, composition, lighting, and mood
+- Each pipeline prepends its own style before image generation
+- Both pipelines use the same LLM output format (each makes its own call, so different events are possible)
 
 **Response handling:**
 - The LLM `.response` field may not be a string — always coerce: `typeof raw === "string" ? raw : JSON.stringify(raw)`
@@ -191,7 +209,7 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 ### Decision: KV cache with versioned keys and 24h TTL
 
 **Cache key formats:**
-- 4-level: `fact4:v2:YYYY-MM-DD`
+- 4-level: `fact4:v3:YYYY-MM-DD`
 - 1-bit: `fact1:v5:YYYY-MM-DD`
 
 **Why versioned keys:**
@@ -353,4 +371,6 @@ FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model pro
 | Floyd-Steinberg dithering for 1-bit | 8×8 Bayer ordered dithering | Floyd-Steinberg creates random-looking noise on e-ink; Bayer is deterministic and stable |
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
 | User-configurable location | Hardcoded Naperville, IL | Single-user deployment; easy to change in code |
-| Separate LLM prompts per pipeline | Single SYSTEM_PROMPT | Both pipelines benefit from the same rich woodcut scene descriptions |
+| Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
+| Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
+| Shared FLUX.2 code with birthday pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |

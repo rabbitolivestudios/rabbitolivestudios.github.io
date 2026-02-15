@@ -10,8 +10,8 @@ Also serves weather data for Naperville, IL and a daily "On This Day" historical
 **"Moment Before"** — each day, the system:
 1. Fetches all historical events for today's date from Wikipedia
 2. An LLM (Llama 3.3 70B) picks the most visually dramatic event
-3. SDXL generates a woodcut-style illustration of the scene *just before* the event
-4. Two versions are produced: a 4-level grayscale PNG and a 1-bit Bayer-dithered PNG
+3. An image model generates an illustration of the scene *just before* the event, with a daily rotating art style
+4. Two versions are produced: a 4-level grayscale PNG (FLUX.2, rotating styles) and a 1-bit Bayer-dithered PNG (SDXL, woodcut)
 
 Example: For the sinking of the Titanic, the image would show a grand ocean liner sailing calmly through dark waters, with a faint iceberg on the horizon. The text reads: **"Sinking of the Titanic"** / **"North Atlantic Ocean"** / **"Apr 14, 1912"**
 
@@ -91,18 +91,23 @@ open fact.png fact1.png
 
 ## Image Pipelines
 
-Two pipelines share the same LLM event selection and SDXL image generation, then diverge for output processing.
+Two pipelines share the same LLM event selection (scene-only prompt), then each prepends its own art style and uses its own image model.
 
 ### Pipeline A: 4-level grayscale (`/fact.png`)
+
+Uses **FLUX.2 klein-9b** with daily rotating art styles: Woodcut → Pencil Sketch → Charcoal (cycles by `dayOfYear % 3`). Falls back to SDXL with woodcut style if FLUX.2 fails.
 
 ```
 Wikipedia "On This Day" API
         │
         ▼
-Llama 3.3 70B (picks event, writes scene + woodcut image prompt)
+Llama 3.3 70B (picks event, writes scene-only image prompt)
         │
         ▼
-SDXL (20 steps, guidance 7.0) → JPEG
+Prepend daily style (Woodcut / Pencil Sketch / Charcoal) + anti-text suffix
+        │
+        ▼
+FLUX.2 klein-9b (4 steps, guidance 7.0) → JPEG  [fallback: SDXL 20 steps]
         │
         ▼
 Cloudflare Images (JPEG → PNG conversion)
@@ -122,11 +127,16 @@ Tone curve (contrast 1.2, gamma 0.95) → quantize to 4 levels
 
 ### Pipeline B: 1-bit Bayer dithered (`/fact1.png`)
 
+Uses **SDXL** with hardcoded woodcut style (unchanged from v2).
+
 ```
 Wikipedia "On This Day" API
         │
         ▼
-Llama 3.3 70B (picks event, writes scene + woodcut image prompt)
+Llama 3.3 70B (picks event, writes scene-only image prompt)
+        │
+        ▼
+Prepend woodcut style + anti-text suffix
         │
         ▼
 SDXL (20 steps, guidance 6.5) → JPEG
@@ -191,9 +201,9 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 
 ### Key Technical Details
 
-- **Image model**: `@cf/stabilityai/stable-diffusion-xl-base-1.0` (SDXL) via JSON API
-- **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
-- **Art style**: Hand-carved woodcut / linocut relief print with sweeping gouge strokes
+- **Image models**: FLUX.2 klein-9b (Pipeline A), SDXL (Pipeline B + fallback)
+- **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (scene-only prompts, no style baked in)
+- **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); hardcoded woodcut for Pipeline B
 - **4-level output**: 8-bit grayscale PNG quantized to 4 levels (0, 85, 170, 255)
 - **1-bit output**: True 1-bit PNG with 8×8 Bayer ordered dithering (vintage newspaper dot texture)
 - **PNG encoder/decoder**: Pure JavaScript using Web API `CompressionStream`/`DecompressionStream`
@@ -210,7 +220,7 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 │  (ePaper)    │◀────│  ┌────────────────┐  │     └──────────────┘
 └─────────────┘     │  │ Workers AI     │  │     ┌──────────────┐
                      │  │ • Llama 3.3   │  │────▶│  Open-Meteo   │
-                     │  │ • SDXL        │  │     │  (weather)    │
+                     │  │ • FLUX.2/SDXL │  │     │  (weather)    │
                      │  ├────────────────┤  │     └──────────────┘
                      │  │ Images API     │  │     ┌──────────────┐
                      │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
