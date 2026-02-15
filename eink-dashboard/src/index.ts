@@ -7,7 +7,7 @@ import { handleWeatherPage } from "./pages/weather";
 import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
