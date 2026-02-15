@@ -1,31 +1,38 @@
 /**
- * "Moment Before" engine.
+ * "Moment Before" scene engine.
  *
  * Given today's Wikipedia events, uses an LLM to:
  *   1. Pick the most visually dramatic event
- *   2. Describe the scene from the MOMENT JUST BEFORE it happened
- *   3. Craft an image-generation prompt in wood-carving style
+ *   2. Describe the EVENT ITSELF at its most iconic moment
+ *   3. Craft a scene-only image-generation prompt (style applied separately)
  *
- * The viewer sees the date, year, and location — but NOT what's about
- * to happen.  Sometimes it's obvious, sometimes it's a guessing game.
+ * Despite the "Moment Before" brand name, the prompt now depicts the event
+ * during its defining action — dramatic, recognizable, unmistakable.
  */
 
 import type { Env, MomentBeforeData } from "./types";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
-const SYSTEM_PROMPT = `You are "Moment Before" — a creative mind that imagines the scene just BEFORE a famous historical event.
+const SYSTEM_PROMPT = `You are a creative historian who depicts famous events at their most iconic, dramatic moment.
 
 You will receive a numbered list of events that happened on today's date in history.
 
 Your job:
-1. Pick the ONE event that would make the most visually striking, dramatic, or mysterious image.
-   Prefer events that are widely known, have a clear physical setting, and where the "moment before" creates suspense.
+1. Pick the ONE event that would make the most visually striking, dramatic image.
+   Prefer events that are widely known, have a clear physical setting, and produce an instantly recognizable scene.
 2. Write a short event title (2-5 words) that names the event. Examples: "Sinking of the Titanic", "Kasparov vs Deep Blue", "Moon Landing".
-3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
-   Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
+3. Describe the scene of the EVENT ITSELF at its defining moment of action.
+   Depict the event during its defining action — not the calm before and not the aftermath.
+   Examples:
+   - Dresden bombing → aircraft overhead, searchlights crossing the sky, explosions lighting up the city below
+   - Moon landing → an astronaut stepping onto the lunar surface, Earth hanging in the black sky
+   - Titanic → the ocean liner tilted at a steep angle, lifeboats in the water, people on the slanting deck
+   Avoid graphic injury, bodies, blood, or close-up suffering; focus on the iconic scene and scale.
 4. Extract the geographic location where the event took place.
 5. Write an image-generation prompt describing ONLY the scene — subject, setting, composition, lighting, mood.
+   The scene MUST be historically accurate to the period: architecture, vehicles, clothing, and technology
+   should match the era (e.g., 1945 Dresden has baroque churches and half-timbered houses, not skyscrapers).
    Do NOT include any art style or rendering technique (no "woodcut", "pencil", "charcoal", etc.).
    The style will be applied separately.
    The prompt MUST include: cinematic composition, strong silhouette separation,
@@ -33,7 +40,7 @@ Your job:
    No text or lettering, no pens, no pencils, no drawing tools, no art supplies, no hands.
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
-{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Strong silhouette separation, dramatic lighting, cinematic wide-angle composition."}`;
+{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"The great ocean liner lists steeply to one side, its stern rising from the black water. Lifeboats dot the sea below as tiny figures cling to the tilting deck.","prompt":"A massive ocean liner tilting steeply into dark ocean water at night, stern rising, lifeboats scattered on the sea below, tiny figures on the slanting deck. Strong silhouette separation, dramatic lighting, cinematic wide-angle composition."}`;
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -144,7 +151,7 @@ function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeD
     title: "",
     scene: event.text,
     imagePrompt:
-      `A dramatic historical scene from ${event.year}. ` +
+      `A dramatic depiction of a historical event from ${event.year}. ` +
       `Strong silhouette separation, dramatic lighting, cinematic composition.`,
   };
 }
@@ -154,10 +161,10 @@ function fallback(): MomentBeforeData {
     year: 1969,
     location: "Cape Canaveral, Florida",
     title: "Apollo 11 Launch",
-    scene: "A towering rocket stands on the launch pad, wreathed in vapor, under a pale dawn sky.",
+    scene: "A Saturn V rocket lifts off in a torrent of flame and smoke, rising above the launch tower.",
     imagePrompt:
-      "A towering Saturn V rocket standing on a launch pad at dawn, " +
-      "wreathed in wisps of vapor, with flat Florida marshland stretching to the horizon. " +
+      "A Saturn V rocket lifting off from the launch pad, enormous plume of fire and smoke billowing outward, " +
+      "the rocket clearing the launch tower against a bright sky. " +
       "Strong silhouette separation, dramatic lighting, cinematic composition.",
   };
 }
