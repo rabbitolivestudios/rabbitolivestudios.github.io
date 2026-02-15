@@ -91,9 +91,15 @@ function renderHTML(
   displayDate: string,
   isBirthday: boolean = false,
 ): string {
-  const caption = isBirthday
-    ? `Happy Birthday!`
-    : `${moment.location} | ${moment.title || moment.scene.slice(0, 40)} | ${displayDate}, ${moment.year}`;
+  const location = moment.location.length > 35
+    ? moment.location.slice(0, 32) + "..."
+    : moment.location;
+  const title = moment.title || moment.scene.slice(0, 40);
+  const dateLine = `${displayDate}, ${moment.year}`;
+
+  const captionHTML = isBirthday
+    ? `<span class="cap-center">Happy Birthday!</span>`
+    : `<span class="cap-left">${location}</span><span class="cap-center">${title}</span><span class="cap-right">${dateLine}</span>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -122,19 +128,24 @@ function renderHTML(
     width: 800px; height: 24px;
     background: #000; color: #fff;
     font-size: 14px; font-weight: 600;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0 16px;
+    display: flex; align-items: center;
+    padding: 0 12px;
     overflow: hidden;
     white-space: nowrap;
-    text-overflow: ellipsis;
   }
+  .cap-left { flex-shrink: 0; }
+  .cap-center {
+    flex: 1; text-align: center;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .cap-right { flex-shrink: 0; }
 </style>
 </head>
 <body>
   <div class="image-container">
     <img src="data:image/png;base64,${imageB64}" alt="Moment Before">
   </div>
-  <div class="caption">${caption}</div>
+  <div class="caption">${captionHTML}</div>
 </body>
 </html>`;
 }
