@@ -11,8 +11,9 @@ import { measureText } from "./font";
 import {
   WIDTH, HEIGHT,
   resizeGray, centerCropGray, drawText,
-  applyToneCurve, quantize4Level,
+  quantize4Level,
 } from "./image";
+import { applyToneCurve } from "./convert-1bit";
 import { getArtStyle } from "./birthday";
 import type { BirthdayPerson } from "./birthday";
 import type { Env } from "./types";

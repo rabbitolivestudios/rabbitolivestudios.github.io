@@ -169,7 +169,7 @@ async function handleFactImage(env: Env): Promise<Response> {
  */
 async function handleFact1BitImage(env: Env): Promise<Response> {
   const { dateStr } = getChicagoDateParts();
-  const cacheKey = `fact1:v5:${dateStr}`;
+  const cacheKey = `fact1:v6:${dateStr}`;
 
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
@@ -180,7 +180,7 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   try {
     const { events, displayDate } = await getTodayEvents(env);
     const moment = await generateMomentBefore(env, events);
-    const png = await generateMomentImage1Bit(env, moment, displayDate);
+    const png = await generateMomentImage1Bit(env, moment, displayDate, dateStr);
     await env.CACHE.put(cacheKey, pngToBase64(png));
     return new Response(png, { headers: PNG_HEADERS });
   } catch (err) {
@@ -244,8 +244,8 @@ async function handleScheduled(env: Env): Promise<void> {
     // 3. Always generate 1-bit image (not affected by birthdays)
     const moment1 = await generateMomentBefore(env, events);
     console.log(`Cron 1-bit: LLM picked ${moment1.year}, ${moment1.location}`);
-    const png1 = await generateMomentImage1Bit(env, moment1, displayDate);
-    await env.CACHE.put(`fact1:v5:${dateStr}`, pngToBase64(png1));
+    const png1 = await generateMomentImage1Bit(env, moment1, displayDate, dateStr);
+    await env.CACHE.put(`fact1:v6:${dateStr}`, pngToBase64(png1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 4. Cache fact.json for backward compatibility
@@ -329,9 +329,10 @@ export default {
         });
       }
       case "/test1.png": {
-        // Test 1-bit with a custom date: /test1.png?m=10&d=31
+        // Test 1-bit with a custom date: /test1.png?m=10&d=31&style=woodcut
         const m1 = url.searchParams.get("m") ?? "10";
         const d1 = url.searchParams.get("d") ?? "20";
+        const forceStyle = url.searchParams.get("style") ?? undefined;
         const wikiUrl1 = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m1}/${d1}`;
         const wikiRes1 = await fetch(wikiUrl1, {
           headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
@@ -342,10 +343,15 @@ export default {
           .map((e: any) => ({ year: e.year as number, text: e.text as string }));
         const months1 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
         const displayDate1 = `${months1[parseInt(m1) - 1]} ${parseInt(d1)}`;
+        const testDateStr = `2026-${m1.padStart(2, "0")}-${d1.padStart(2, "0")}`;
         const moment1 = await generateMomentBefore(env, testEvents1);
-        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1);
+        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr, forceStyle);
         return new Response(png1, {
-          headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
+          headers: {
+            "Content-Type": "image/png",
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+          },
         });
       }
       case "/test-birthday.png": {

@@ -7,7 +7,7 @@
  *   AI model → grayscale → resize → caption → tone curve → quantize 4 levels
  *
  * Pipeline B (/fact1.png — true 1-bit):
- *   AI model → grayscale → resize → caption → tone curve → threshold → despeckle
+ *   AI model → grayscale → resize → style-aware 1-bit (Bayer or threshold) → caption
  *
  * Output: 800 × 480 px, full-bleed image
  */
@@ -16,6 +16,9 @@ import { encodePNGGray8, encodePNG1Bit } from "./png";
 import { decodePNG } from "./png-decode";
 import { measureText } from "./font";
 import { FONT_8X8 as FONT_DATA } from "./font";
+import { applyToneCurve } from "./convert-1bit";
+import { convert1Bit } from "./convert-1bit";
+import { pick1BitStyle, findStyleByName, ANTI_TEXT_SUFFIX } from "./styles-1bit";
 import type { Env, MomentBeforeData } from "./types";
 
 export const WIDTH = 800;
@@ -52,9 +55,6 @@ const SCENE_STYLES = [
     prompt: "dramatic charcoal drawing, expressive strokes, deep shadows, textured paper",
   },
 ] as const;
-
-/** Hardcoded woodcut style for Pipeline B (1-bit). */
-const WOODCUT_STYLE = "hand-carved woodcut print, linocut relief print, visible U-gouge and V-gouge carving marks, sweeping curved gouge strokes, large solid black ink areas with minimal midtones";
 
 /** Get the scene style for a given date string (YYYY-MM-DD, Chicago timezone). */
 export function getSceneStyle(dateStr: string): typeof SCENE_STYLES[number] {
@@ -377,18 +377,6 @@ export async function generateMomentImageRaw(
   return generateAIImage(env, moment.imagePrompt);
 }
 
-// --- Tone curve ---
-
-export function applyToneCurve(gray: Uint8Array, contrast: number, gamma: number): void {
-  for (let i = 0; i < gray.length; i++) {
-    let x = (gray[i] - 128) * contrast + 128;
-    if (x < 0) x = 0;
-    if (x > 255) x = 255;
-    x = 255 * Math.pow(x / 255, gamma);
-    gray[i] = Math.round(x < 0 ? 0 : x > 255 ? 255 : x);
-  }
-}
-
 // --- 4-level quantization (no dithering) ---
 
 export function quantize4Level(gray: Uint8Array): void {
@@ -399,37 +387,6 @@ export function quantize4Level(gray: Uint8Array): void {
     else if (v < 192) gray[i] = 170;
     else gray[i] = 255;
   }
-}
-
-// --- 8×8 Bayer ordered dithering: stable dotted tonal texture for e-ink ---
-
-const FACT1_DITHER_MODE = "bayer8";
-
-// Classic 8×8 Bayer threshold matrix (values 0–63)
-const BAYER8 = [
-   0, 32,  8, 40,  2, 34, 10, 42,
-  48, 16, 56, 24, 50, 18, 58, 26,
-  12, 44,  4, 36, 14, 46,  6, 38,
-  60, 28, 52, 20, 62, 30, 54, 22,
-   3, 35, 11, 43,  1, 33,  9, 41,
-  51, 19, 59, 27, 49, 17, 57, 25,
-  15, 47,  7, 39, 13, 45,  5, 37,
-  63, 31, 55, 23, 61, 29, 53, 21,
-];
-
-// Pre-compute normalized thresholds (0–255 range)
-const BAYER8_NORM = BAYER8.map(v => (v / 64) * 255);
-
-function bayerDither8x8(gray: Uint8Array, w: number, h: number): Uint8Array {
-  const bits = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) {
-    const row = (y & 7) << 3; // (y % 8) * 8
-    for (let x = 0; x < w; x++) {
-      const threshold = BAYER8_NORM[row + (x & 7)];
-      bits[y * w + x] = gray[y * w + x] > threshold ? 1 : 0;
-    }
-  }
-  return bits;
 }
 
 // --- Common: AI model → grayscale → crop → resize ---
@@ -502,7 +459,8 @@ export async function generateMomentImage(
   // Fallback to SDXL with woodcut style
   if (!gray) {
     console.log("Pipeline A: FLUX.2 failed, falling back to SDXL");
-    const fallbackPrompt = `${WOODCUT_STYLE}, ${moment.imagePrompt}, no text, no words, no letters, no writing`;
+    const woodcutStyle = findStyleByName("woodcut");
+    const fallbackPrompt = `${woodcutStyle.prompt}, ${moment.imagePrompt}, ${ANTI_TEXT_SUFFIX}`;
     gray = await generateAndDecodeGray(env, fallbackPrompt);
   }
 
@@ -518,26 +476,32 @@ export async function generateMomentImage(
   return encodePNGGray8(gray, WIDTH, HEIGHT);
 }
 
-// --- Pipeline B: 1-bit Bayer dithered (/fact1.png) ---
-// Same image generation as 4-level → tone adjust → 8×8 Bayer dithering → caption.
+// --- Pipeline B: style-aware 1-bit (/fact1.png) ---
+// SDXL → grayscale → style-aware 1-bit conversion (Bayer or threshold) → caption.
 
 export async function generateMomentImage1Bit(
   env: Env,
   moment: MomentBeforeData,
   displayDate: string,
+  dateStr: string,
+  forceStyle?: string,
 ): Promise<Uint8Array> {
-  // 1. Generate → grayscale → crop → resize (SDXL with woodcut style)
-  const prompt = `${WOODCUT_STYLE}, ${moment.imagePrompt}, no text, no words, no letters, no writing`;
+  // 1. Pick style (deterministic by date+event, or forced for testing)
+  const spec = forceStyle ? findStyleByName(forceStyle) : pick1BitStyle(dateStr, moment);
+
+  // 2. Build prompt: style + scene + anti-text
+  const prompt = `${spec.prompt}, ${moment.imagePrompt}, ${ANTI_TEXT_SUFFIX}`;
+
+  // 3. Generate → grayscale → crop → resize (SDXL)
   const gray = await generateAndDecodeGray(env, prompt, FACT1_STEPS, FACT1_GUIDANCE);
 
-  // 2. Tone adjustment to preserve midtones for dithering
-  applyToneCurve(gray, 1.20, 0.92);
+  // 4. Style-aware 1-bit conversion (with stabilization + guardrail)
+  const { bits, blackRatio, styleName } = convert1Bit(gray, WIDTH, HEIGHT, spec);
 
-  // 3. 8×8 Bayer ordered dithering → 1-bit
-  const bits = bayerDither8x8(gray, WIDTH, HEIGHT);
-
-  // 4. Caption drawn AFTER dithering so text stays crisp
+  // 5. Caption drawn AFTER conversion so text stays crisp
   drawOverlayText1Bit(bits, moment, displayDate);
+
+  console.log(`Pipeline B: ${styleName} (${spec.mode}), blackRatio=${blackRatio.toFixed(3)}`);
 
   return encodePNG1Bit(bits, WIDTH, HEIGHT);
 }
