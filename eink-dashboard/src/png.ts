@@ -185,6 +185,65 @@ export async function encodePNG1Bit(
   return png;
 }
 
+/**
+ * Encode a palette-indexed PNG (color type 3).
+ * @param indices - Uint8Array of palette indices (0 to palette.length-1), one per pixel
+ * @param width - image width
+ * @param height - image height
+ * @param palette - array of [R, G, B] palette colors
+ * @returns PNG file bytes
+ */
+export async function encodePNGIndexed(
+  indices: Uint8Array,
+  width: number,
+  height: number,
+  palette: [number, number, number][]
+): Promise<Uint8Array> {
+  // IHDR: bit depth 8, color type 3 (indexed)
+  const ihdrData = new Uint8Array(13);
+  writeU32BE(ihdrData, 0, width);
+  writeU32BE(ihdrData, 4, height);
+  ihdrData[8] = 8;  // bit depth = 8
+  ihdrData[9] = 3;  // color type = indexed-color
+  ihdrData[10] = 0; // compression = deflate
+  ihdrData[11] = 0; // filter = adaptive
+  ihdrData[12] = 0; // interlace = none
+  const ihdr = makeChunk("IHDR", ihdrData);
+
+  // PLTE chunk: 3 bytes per palette entry
+  const plteData = new Uint8Array(palette.length * 3);
+  for (let i = 0; i < palette.length; i++) {
+    plteData[i * 3] = palette[i][0];
+    plteData[i * 3 + 1] = palette[i][1];
+    plteData[i * 3 + 2] = palette[i][2];
+  }
+  const plte = makeChunk("PLTE", plteData);
+
+  // IDAT: scanlines with filter byte (0x00) + one index byte per pixel
+  const raw = new Uint8Array(height * (1 + width));
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * (1 + width);
+    raw[rowOffset] = 0; // filter type: None
+    raw.set(indices.subarray(y * width, (y + 1) * width), rowOffset + 1);
+  }
+
+  const compressed = await deflateRaw(raw);
+  const zlibData = zlibWrap(compressed, raw);
+  const idat = makeChunk("IDAT", zlibData);
+  const iend = makeIEND();
+
+  const totalLen = PNG_SIGNATURE.length + ihdr.length + plte.length + idat.length + iend.length;
+  const png = new Uint8Array(totalLen);
+  let offset = 0;
+  png.set(PNG_SIGNATURE, offset); offset += PNG_SIGNATURE.length;
+  png.set(ihdr, offset); offset += ihdr.length;
+  png.set(plte, offset); offset += plte.length;
+  png.set(idat, offset); offset += idat.length;
+  png.set(iend, offset);
+
+  return png;
+}
+
 function makeIHDRGray8(width: number, height: number): Uint8Array {
   const data = new Uint8Array(13);
   writeU32BE(data, 0, width);

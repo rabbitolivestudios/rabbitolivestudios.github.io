@@ -12,6 +12,8 @@ export interface DecodedImage {
   height: number;
   /** Grayscale 0-255, row-major: pixels[y * width + x] */
   gray: Uint8Array;
+  /** RGB 0-255, row-major: rgb[(y * width + x) * 3 + channel]. Only for color types 2/6. */
+  rgb?: Uint8Array;
 }
 
 // --- PNG chunk parsing ---
@@ -192,6 +194,21 @@ export async function decodePNG(png: Uint8Array): Promise<DecodedImage> {
   // Unfilter
   const pixels = unfilterScanlines(rawScanlines, width, height, channels);
 
+  // Extract RGB for color types (before grayscale conversion)
+  let rgb: Uint8Array | undefined;
+  if (channels === 3) {
+    // RGB: pixels are already 3 bytes/pixel
+    rgb = new Uint8Array(pixels);
+  } else if (channels === 4) {
+    // RGBA: strip alpha to produce 3-byte RGB
+    rgb = new Uint8Array(width * height * 3);
+    for (let i = 0; i < width * height; i++) {
+      rgb[i * 3] = pixels[i * 4];
+      rgb[i * 3 + 1] = pixels[i * 4 + 1];
+      rgb[i * 3 + 2] = pixels[i * 4 + 2];
+    }
+  }
+
   // Convert to grayscale
   let gray: Uint8Array;
   if (channels === 1) {
@@ -206,5 +223,5 @@ export async function decodePNG(png: Uint8Array): Promise<DecodedImage> {
     gray = toGrayscale(pixels, width, height, channels);
   }
 
-  return { width, height, gray };
+  return { width, height, gray, rgb };
 }

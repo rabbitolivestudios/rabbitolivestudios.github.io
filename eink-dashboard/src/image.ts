@@ -68,7 +68,7 @@ export function getSceneStyle(dateStr: string): typeof SCENE_STYLES[number] {
 
 const SDXL_MODEL = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
 
-async function generateAIImage(
+export async function generateAIImage(
   env: Env,
   prompt: string,
   steps: number = SDXL_STEPS,
@@ -99,7 +99,7 @@ async function generateAIImage(
 
 // --- AI image generation (FLUX.2 klein-9b) ---
 
-async function generateFluxImage(env: Env, prompt: string): Promise<Uint8Array> {
+export async function generateFluxImage(env: Env, prompt: string): Promise<Uint8Array> {
   const form = new FormData();
   form.append("prompt", prompt);
   form.append("width", String(FLUX_WIDTH));
