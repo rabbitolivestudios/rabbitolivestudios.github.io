@@ -8,7 +8,7 @@ import { handleFactPage } from "./pages/fact";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -142,7 +142,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   }
 
   // Regular Moment Before pipeline
-  const cacheKey = `fact4:v2:${dateStr}`;
+  const cacheKey = `fact4:v3:${dateStr}`;
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
     const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
@@ -152,7 +152,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   try {
     const { events, displayDate } = await getTodayEvents(env);
     const moment = await generateMomentBefore(env, events);
-    const png = await generateMomentImage(env, moment, displayDate);
+    const png = await generateMomentImage(env, moment, displayDate, dateStr);
     await env.CACHE.put(cacheKey, pngToBase64(png));
     return new Response(png, { headers: PNG_HEADERS });
   } catch (err) {
@@ -227,16 +227,16 @@ async function handleScheduled(env: Env): Promise<void> {
         console.error("Cron: birthday image failed, generating Moment Before instead:", err);
         // Fall through to generate regular 4-level as fallback
         const moment4 = await generateMomentBefore(env, events);
-        const png4 = await generateMomentImage(env, moment4, displayDate);
-        await env.CACHE.put(`fact4:v2:${dateStr}`, pngToBase64(png4));
+        const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
+        await env.CACHE.put(`fact4:v3:${dateStr}`, pngToBase64(png4));
         console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
       }
     } else {
       // 2. No birthday — regular 4-level grayscale image
       const moment4 = await generateMomentBefore(env, events);
       console.log(`Cron 4-level: LLM picked ${moment4.year}, ${moment4.location}`);
-      const png4 = await generateMomentImage(env, moment4, displayDate);
-      await env.CACHE.put(`fact4:v2:${dateStr}`, pngToBase64(png4));
+      const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
+      await env.CACHE.put(`fact4:v3:${dateStr}`, pngToBase64(png4));
       console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
     }
 
@@ -316,8 +316,9 @@ export default {
           .map((e: any) => ({ year: e.year as number, text: e.text as string }));
         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
         const displayDate = `${months[parseInt(m) - 1]} ${parseInt(d)}`;
+        const testDateStr = `2026-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
         const moment = await generateMomentBefore(env, testEvents);
-        const png = await generateMomentImage(env, moment, displayDate);
+        const png = await generateMomentImage(env, moment, displayDate, testDateStr);
         return new Response(png, {
           headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
         });

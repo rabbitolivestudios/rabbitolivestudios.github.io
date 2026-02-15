@@ -25,22 +25,15 @@ Your job:
 3. Describe the scene from the moment JUST BEFORE the event.  Do NOT show the event itself.
    Example: Titanic → show the ship sailing calmly, iceberg barely visible on the horizon.
 4. Extract the geographic location where the event took place.
-5. Write an image-generation prompt for an illustration of that scene.
-   The prompt MUST specify: hand-carved woodcut print, linocut relief print,
-   vintage newspaper woodcut illustration,
-   visible U-gouge and V-gouge carving marks,
-   sweeping curved gouge strokes (not straight line hatching),
-   raised inked ridges (peaks) and carved channels (valleys),
-   large solid black ink areas with minimal midtones,
-   two to three tonal regions only,
-   simple background with strong silhouette separation.
-   AVOID: stippling, halftone dots, fine crosshatching, pencil shading,
-   airbrush gradients, repetitive horizontal line-banding in the sky, photorealism.
-   Cinematic composition, no text or lettering,
-   no pens, no pencils, no drawing tools, no art supplies, no hands.
+5. Write an image-generation prompt describing ONLY the scene — subject, setting, composition, lighting, mood.
+   Do NOT include any art style or rendering technique (no "woodcut", "pencil", "charcoal", etc.).
+   The style will be applied separately.
+   The prompt MUST include: cinematic composition, strong silhouette separation,
+   simple background, dramatic lighting.
+   No text or lettering, no pens, no pencils, no drawing tools, no art supplies, no hands.
 
 Reply with ONLY valid JSON, no markdown fences, no explanation:
-{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"1960s newspaper editorial illustration, woodcut etching scratchboard style. A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. High contrast black and white, clean hatching detail. Detailed realistic drawing, cinematic wide-angle composition. No text or lettering. No pens, no pencils, no drawing tools."}`;
+{"year":1912,"title":"Sinking of the Titanic","location":"North Atlantic Ocean","scene":"A massive ocean liner cuts through calm waters under a starlit sky. On the distant horizon, a pale shape rises from the dark sea.","prompt":"A grand ocean liner sailing through calm waters at night under stars, a faint iceberg shape on the far horizon. Strong silhouette separation, dramatic lighting, cinematic wide-angle composition."}`;
 
 /**
  * Build the user message listing today's events for the LLM.
@@ -151,10 +144,8 @@ function fallbackFromEvent(event: { year: number; text: string }): MomentBeforeD
     title: "",
     scene: event.text,
     imagePrompt:
-      `1960s newspaper editorial illustration, woodcut etching scratchboard style. ` +
       `A dramatic historical scene from ${event.year}. ` +
-      `High contrast with gentle midtones, clean hatching detail, smooth grayscale shading allowed. ` +
-      `Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.`,
+      `Strong silhouette separation, dramatic lighting, cinematic composition.`,
   };
 }
 
@@ -165,9 +156,8 @@ function fallback(): MomentBeforeData {
     title: "Apollo 11 Launch",
     scene: "A towering rocket stands on the launch pad, wreathed in vapor, under a pale dawn sky.",
     imagePrompt:
-      "1960s newspaper editorial illustration, woodcut etching scratchboard style. " +
       "A towering Saturn V rocket standing on a launch pad at dawn, " +
       "wreathed in wisps of vapor, with flat Florida marshland stretching to the horizon. " +
-      "High contrast with gentle midtones, clean hatching detail. Cinematic composition. No text or lettering. No pens, no pencils, no drawing tools.",
+      "Strong silhouette separation, dramatic lighting, cinematic composition.",
   };
 }

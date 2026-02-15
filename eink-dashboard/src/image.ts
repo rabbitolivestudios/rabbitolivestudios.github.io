@@ -21,17 +21,48 @@ import type { Env, MomentBeforeData } from "./types";
 export const WIDTH = 800;
 export const HEIGHT = 480;
 
-// /fact.png generation params (DO NOT CHANGE)
+// SDXL generation params (Pipeline B + Pipeline A fallback)
 const SDXL_STEPS = 20;
 const SDXL_GUIDANCE = 7.0;
 const SDXL_WIDTH = 1024;
 const SDXL_HEIGHT = 768;
 
-// ====================================================================
-// /fact1.png — Artist-interpretation 1-bit pipeline
-// ====================================================================
+// Pipeline B (1-bit) params
 const FACT1_STEPS = 20;       // Workers AI max
 const FACT1_GUIDANCE = 6.5;
+
+// FLUX.2 params (Pipeline A primary)
+const FLUX_MODEL = "@cf/black-forest-labs/flux-2-klein-9b";
+const FLUX_WIDTH = 1024;
+const FLUX_HEIGHT = 768;
+
+// --- Scene styles for daily rotation (Pipeline A) ---
+
+const SCENE_STYLES = [
+  {
+    name: "Woodcut",
+    prompt: "hand-carved woodcut print, bold U-gouge marks, high contrast black and white, sweeping curved gouge strokes, large solid black ink areas with minimal midtones",
+  },
+  {
+    name: "Pencil Sketch",
+    prompt: "detailed graphite pencil sketch, fine cross-hatching, full tonal range, on white paper",
+  },
+  {
+    name: "Charcoal",
+    prompt: "dramatic charcoal drawing, expressive strokes, deep shadows, textured paper",
+  },
+] as const;
+
+/** Hardcoded woodcut style for Pipeline B (1-bit). */
+const WOODCUT_STYLE = "hand-carved woodcut print, linocut relief print, visible U-gouge and V-gouge carving marks, sweeping curved gouge strokes, large solid black ink areas with minimal midtones";
+
+/** Get the scene style for a given date string (YYYY-MM-DD, Chicago timezone). */
+export function getSceneStyle(dateStr: string): typeof SCENE_STYLES[number] {
+  const d = new Date(dateStr + "T12:00:00");
+  const start = new Date(d.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86400000) + 1;
+  return SCENE_STYLES[dayOfYear % SCENE_STYLES.length];
+}
 
 // --- AI image generation (SDXL) ---
 
@@ -64,6 +95,41 @@ async function generateAIImage(
   }
 
   throw new Error(`Unexpected AI image response type: ${typeof result}`);
+}
+
+// --- AI image generation (FLUX.2 klein-9b) ---
+
+async function generateFluxImage(env: Env, prompt: string): Promise<Uint8Array> {
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("width", String(FLUX_WIDTH));
+  form.append("height", String(FLUX_HEIGHT));
+  form.append("guidance", "7.0");
+
+  const formResponse = new Response(form);
+  const formStream = formResponse.body;
+  const formContentType = formResponse.headers.get("content-type")!;
+
+  const result: any = await env.AI.run(FLUX_MODEL as any, {
+    multipart: {
+      body: formStream,
+      contentType: formContentType,
+    },
+  });
+
+  if (result && typeof result === "object") {
+    const img = result.image ?? result.images?.[0];
+    if (img && typeof img === "string") {
+      return Uint8Array.from(atob(img), c => c.charCodeAt(0));
+    }
+  }
+  if (result instanceof Uint8Array) return result;
+  if (result instanceof ArrayBuffer) return new Uint8Array(result);
+  if (result instanceof ReadableStream) {
+    return new Uint8Array(await new Response(result).arrayBuffer());
+  }
+
+  throw new Error(`Unexpected FLUX.2 response type: ${typeof result}`);
 }
 
 // --- Bilinear resize (grayscale) ---
@@ -389,14 +455,56 @@ async function generateAndDecodeGray(
     : resizeGray(cropped.gray, cropped.width, cropped.height, WIDTH, HEIGHT);
 }
 
+// --- FLUX.2 decode helper ---
+
+async function generateAndDecodeGrayFlux(
+  env: Env,
+  prompt: string,
+): Promise<Uint8Array> {
+  const jpegBytes = await generateFluxImage(env, prompt);
+
+  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
+  const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
+  const decoded = await decodePNG(pngBytes);
+
+  const cropped = centerCropGray(decoded.gray, decoded.width, decoded.height, WIDTH, HEIGHT);
+  return (cropped.width === WIDTH && cropped.height === HEIGHT)
+    ? cropped.gray
+    : resizeGray(cropped.gray, cropped.width, cropped.height, WIDTH, HEIGHT);
+}
+
 // --- Pipeline A: 4-level grayscale (/fact.png) ---
+// Uses FLUX.2 klein-9b with daily style rotation, SDXL fallback.
 
 export async function generateMomentImage(
   env: Env,
   moment: MomentBeforeData,
-  displayDate: string
+  displayDate: string,
+  dateStr: string,
 ): Promise<Uint8Array> {
-  const gray = await generateAndDecodeGray(env, moment.imagePrompt);
+  const style = getSceneStyle(dateStr);
+  const styledPrompt = `${style.prompt}, ${moment.imagePrompt}, no text, no words, no letters, no writing`;
+  console.log(`Pipeline A: using ${style.name} style with FLUX.2`);
+
+  let gray: Uint8Array | null = null;
+
+  // Try FLUX.2 (retry once on failure)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      gray = await generateAndDecodeGrayFlux(env, styledPrompt);
+      break;
+    } catch (err) {
+      console.error(`Pipeline A FLUX.2 attempt ${attempt + 1} failed:`, err);
+      if (attempt === 0) continue;
+    }
+  }
+
+  // Fallback to SDXL with woodcut style
+  if (!gray) {
+    console.log("Pipeline A: FLUX.2 failed, falling back to SDXL");
+    const fallbackPrompt = `${WOODCUT_STYLE}, ${moment.imagePrompt}, no text, no words, no letters, no writing`;
+    gray = await generateAndDecodeGray(env, fallbackPrompt);
+  }
 
   // Caption bar (before tone curve so text stays clean)
   drawOverlayText(gray, moment, displayDate);
@@ -418,8 +526,9 @@ export async function generateMomentImage1Bit(
   moment: MomentBeforeData,
   displayDate: string,
 ): Promise<Uint8Array> {
-  // 1. Generate → grayscale → crop → resize (same prompt as 4-level)
-  const gray = await generateAndDecodeGray(env, moment.imagePrompt, FACT1_STEPS, FACT1_GUIDANCE);
+  // 1. Generate → grayscale → crop → resize (SDXL with woodcut style)
+  const prompt = `${WOODCUT_STYLE}, ${moment.imagePrompt}, no text, no words, no letters, no writing`;
+  const gray = await generateAndDecodeGray(env, prompt, FACT1_STEPS, FACT1_GUIDANCE);
 
   // 2. Tone adjustment to preserve midtones for dithering
   applyToneCurve(gray, 1.20, 0.92);
