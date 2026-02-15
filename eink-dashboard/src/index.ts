@@ -6,7 +6,7 @@ import { generateMomentBefore, getOrGenerateMoment } from "./moment";
 import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
-import { handleColorMomentPage, handleColorTestMoment } from "./pages/color-moment";
+import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday } from "./pages/color-moment";
 import { handleColorAPODPage } from "./pages/color-apod";
 import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
@@ -399,6 +399,8 @@ export default {
         return handleColorMomentPage(env, url);
       case "/color/test-moment":
         return handleColorTestMoment(env, url);
+      case "/color/test-birthday":
+        return handleColorTestBirthday(env, url);
       case "/color/apod":
         return handleColorAPODPage(env, url);
       case "/color/headlines":

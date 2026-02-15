@@ -95,7 +95,7 @@ export async function generateBirthdayImage(
 }
 
 /** Try to fetch a file from R2 with .jpg or .jpeg extension. */
-async function getPhotoFromR2(env: Env, basePath: string): Promise<Uint8Array | null> {
+export async function getPhotoFromR2(env: Env, basePath: string): Promise<Uint8Array | null> {
   for (const ext of [".jpg", ".jpeg"]) {
     try {
       const obj = await env.PHOTOS.get(basePath + ext);
@@ -110,7 +110,7 @@ async function getPhotoFromR2(env: Env, basePath: string): Promise<Uint8Array | 
  * Tries numbered format first ({key}_0.jpg/jpeg .. {key}_3.jpg/jpeg),
  * falls back to single file ({key}.jpg/jpeg).
  */
-async function fetchReferencePhotos(env: Env, key: string): Promise<Uint8Array[]> {
+export async function fetchReferencePhotos(env: Env, key: string): Promise<Uint8Array[]> {
   const photos: Uint8Array[] = [];
 
   // Try numbered photos: {key}_0 through {key}_3
@@ -191,6 +191,41 @@ async function callFlux(
   }
 
   throw new Error(`Unexpected FLUX.2 response type: ${typeof result}`);
+}
+
+/**
+ * Generate a birthday portrait JPEG using FLUX.2 with reference photos.
+ * Returns raw JPEG bytes (before any grayscale/color processing).
+ * Used by both the mono and color birthday pipelines.
+ */
+export async function generateBirthdayJPEG(
+  env: Env,
+  person: BirthdayPerson,
+  currentYear: number,
+  styleOverride?: number,
+): Promise<Uint8Array> {
+  const style = styleOverride !== undefined
+    ? getArtStyle(2020 + styleOverride)
+    : getArtStyle(currentYear);
+
+  const photos = await fetchReferencePhotos(env, person.key);
+  console.log(`Color birthday: found ${photos.length} reference photo(s) for ${person.key}`);
+
+  let jpegBytes: Uint8Array | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      jpegBytes = await callFlux(env, person, style.prompt, photos, currentYear);
+      break;
+    } catch (err) {
+      console.error(`Color birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
+      if (attempt === 0) continue;
+    }
+  }
+
+  if (!jpegBytes) {
+    throw new Error("FLUX.2 portrait generation failed after retries");
+  }
+  return jpegBytes;
 }
 
 /**

@@ -12,9 +12,12 @@ import type { Env, MomentBeforeData } from "../types";
 import { getChicagoDateParts } from "../date-utils";
 import { getTodayEvents } from "../fact";
 import { getOrGenerateMoment, generateMomentBefore } from "../moment";
-import { getBirthdayToday } from "../birthday";
-import { generateAndDecodeColorFlux, generateAndDecodeColor } from "../image-color";
-import { ditherFloydSteinberg, posterizeRGB } from "../dither-spectra6";
+import { getBirthdayToday, getBirthdayByKey, getArtStyle } from "../birthday";
+import type { BirthdayPerson } from "../birthday";
+import { generateBirthdayJPEG } from "../birthday-image";
+import { generateAndDecodeColorFlux, generateAndDecodeColor, centerCropRGB, resizeRGB } from "../image-color";
+import { decodePNG } from "../png-decode";
+import { ditherFloydSteinberg } from "../dither-spectra6";
 import { SPECTRA6_PALETTE } from "../spectra6";
 import { encodePNGIndexed } from "../png";
 import { spectra6CSS } from "../spectra6";
@@ -66,20 +69,28 @@ async function generateColorMoment(
 /** Generate a color birthday portrait, returns base64 PNG. */
 async function generateColorBirthday(
   env: Env,
-  birthday: { name: string; key: string },
+  person: BirthdayPerson,
+  currentYear: number,
+  styleOverride?: number,
 ): Promise<string> {
-  // Simplified color birthday: generate with FLUX.2, posterize, dither
-  const prompt = `portrait of a person named ${birthday.name}, celebratory, warm tones, ${ANTI_TEXT_SUFFIX}`;
+  // Same FLUX.2 pipeline as mono birthday (ref photos, age, art style) but keep RGB
+  const jpegBytes = await generateBirthdayJPEG(env, person, currentYear, styleOverride);
 
-  let rgb: Uint8Array;
-  try {
-    rgb = await generateAndDecodeColorFlux(env, prompt);
-  } catch {
-    rgb = await generateAndDecodeColor(env, prompt);
+  // JPEG → PNG via Cloudflare Images, then decode RGB
+  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
+  const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
+  const decoded = await decodePNG(pngBytes);
+
+  if (!decoded.rgb) {
+    throw new Error("Expected color PNG but got grayscale");
   }
 
-  // Posterize before dithering for smoother result
-  posterizeRGB(rgb, 8);
+  const cropped = centerCropRGB(decoded.rgb, decoded.width, decoded.height, WIDTH, HEIGHT);
+  const rgb = (cropped.width === WIDTH && cropped.height === HEIGHT)
+    ? cropped.rgb
+    : resizeRGB(cropped.rgb, cropped.width, cropped.height, WIDTH, HEIGHT);
+
+  // Dither to Spectra 6 palette
   const indices = ditherFloydSteinberg(rgb, WIDTH, HEIGHT, SPECTRA6_PALETTE);
   const png = await encodePNGIndexed(indices, WIDTH, HEIGHT, SPECTRA6_PALETTE);
   return pngToBase64(png);
@@ -182,7 +193,7 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
     isBirthday = true;
     moment = { year: parseInt(year), location: "", title: birthday.name, scene: "", imagePrompt: "" };
     try {
-      imageB64 = await generateColorBirthday(env, birthday);
+      imageB64 = await generateColorBirthday(env, birthday, parseInt(year));
     } catch (err) {
       console.error("Color birthday failed, falling back to moment:", err);
       isBirthday = false;
@@ -226,6 +237,27 @@ export async function handleColorTestMoment(env: Env, url: URL): Promise<Respons
   const imageB64 = await generateColorMoment(env, moment);
 
   const html = renderHTML(imageB64, moment, displayDate);
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
+/** Test endpoint for color birthday portrait. */
+export async function handleColorTestBirthday(env: Env, url: URL): Promise<Response> {
+  const nameParam = url.searchParams.get("name") ?? "thiago";
+  const person = getBirthdayByKey(nameParam);
+  if (!person) {
+    return new Response(`Unknown person key: ${nameParam}`, { status: 400 });
+  }
+  const styleParam = url.searchParams.get("style");
+  const styleIdx = styleParam !== null ? parseInt(styleParam) : undefined;
+  const currentYear = new Date().getFullYear();
+
+  const imageB64 = await generateColorBirthday(env, person, currentYear, styleIdx);
+  const moment: MomentBeforeData = { year: currentYear, location: "", title: person.name, scene: "", imagePrompt: "" };
+  const captionDate = "Birthday";
+
+  const html = renderHTML(imageB64, moment, captionDate, true);
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
   });
