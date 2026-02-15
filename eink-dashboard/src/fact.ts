@@ -1,4 +1,5 @@
 import type { Env, FactResponse, CachedValue } from "./types";
+import { getChicagoDateParts } from "./date-utils";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -14,31 +15,16 @@ const FALLBACK_FACT: FactResponse = {
 };
 
 function getTodayChicago(): { dateStr: string; displayDate: string; month: string; day: string } {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = fmt.formatToParts(now);
-  const year = parts.find((p) => p.type === "year")!.value;
-  const month = parts.find((p) => p.type === "month")!.value;
-  const day = parts.find((p) => p.type === "day")!.value;
+  const { month, day, dateStr } = getChicagoDateParts();
 
   const displayFmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Chicago",
     month: "short",
     day: "numeric",
   });
-  const displayDate = displayFmt.format(now);
+  const displayDate = displayFmt.format(new Date());
 
-  return {
-    dateStr: `${year}-${month}-${day}`,
-    displayDate,
-    month,
-    day,
-  };
+  return { dateStr, displayDate, month, day };
 }
 
 /**

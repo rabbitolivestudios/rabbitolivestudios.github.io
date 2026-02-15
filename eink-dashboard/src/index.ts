@@ -8,6 +8,7 @@ import { handleFactPage } from "./pages/fact";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData } from "./device";
+import { getChicagoDateParts } from "./date-utils";
 
 const VERSION = "3.4.0";
 
@@ -84,23 +85,6 @@ function pngToBase64(png: Uint8Array): string {
     binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
   }
   return btoa(binary);
-}
-
-/** Helper: parse Chicago date parts. */
-function getChicagoDateParts(): { year: string; month: string; day: string; dateStr: string } {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = fmt.formatToParts(now);
-  const year = parts.find((p) => p.type === "year")!.value;
-  const month = parts.find((p) => p.type === "month")!.value;
-  const day = parts.find((p) => p.type === "day")!.value;
-  const dateStr = `${year}-${month}-${day}`;
-  return { year, month, day, dateStr };
 }
 
 const PNG_HEADERS = {

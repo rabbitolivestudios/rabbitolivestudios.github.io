@@ -3,6 +3,7 @@ export interface Env {
   AI: Ai;
   IMAGES: any;
   PHOTOS: R2Bucket;
+  APOD_API_KEY?: string;
 }
 
 // --- Moment Before types ---
@@ -114,6 +115,30 @@ export interface DeviceData {
   battery_charging: boolean;
   indoor_temp_c: number;       // rounded to integer
   indoor_humidity_pct: number; // rounded to integer
+}
+
+// --- APOD types ---
+
+export interface APODData {
+  title: string;
+  explanation: string;
+  url: string;
+  hdurl?: string;
+  media_type: string;
+  date: string;
+  copyright?: string;
+  thumbnail_url?: string;
+}
+
+// --- Headlines types ---
+
+export interface Headline {
+  title: string;
+  source: string;
+  timestamp: string;
+  summary: string;
+  category: "tariffs" | "markets" | "company" | "regulatory";
+  link?: string;
 }
 
 // --- KV cache wrapper ---
