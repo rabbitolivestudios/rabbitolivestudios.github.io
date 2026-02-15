@@ -192,11 +192,12 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 
   const cur = w.current;
 
-  // Wind string (separate line to avoid wrapping)
-  let windStr = `${icon("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh} km/h`;
+  // Wind string — compact range format for gusts
+  let windStr = `${icon("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh}`;
   if (cur.wind_gusts_kmh > cur.wind_kmh + 10) {
-    windStr += ` | Gusts ${cur.wind_gusts_kmh} km/h`;
+    windStr += `-${cur.wind_gusts_kmh}`;
   }
+  windStr += " km/h";
 
   // Sunrise/sunset
   const sunLine = w.sunrise && w.sunset
@@ -279,7 +280,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   .cur-condition { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
   .cur-meta { font-size: 18px; font-weight: 500; }
   .cur-sun { font-size: 18px; font-weight: 500; margin-top: 2px; }
-  .cur-indoor { font-size: 16px; font-weight: 500; margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+  .header-center { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 5px; }
 
   .divider {
     border: none; border-top: 2px solid #000;
@@ -332,6 +333,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 <body>
   <div class="header">
     <div class="location">${w.location.name.toUpperCase()}</div>
+    ${device ? `<div class="header-center">${icon("house", 18)}<span>${device.indoor_temp_c}°C</span>${icon("droplet", 14)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
     <div class="header-right">
       <div class="datetime">${dateStr} | ${timeStr}</div>
       ${device ? `<div class="battery">${batteryIcon(device.battery_level, device.battery_charging, 20)} ${device.battery_level}%</div>` : ""}
@@ -344,10 +346,8 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
     <div class="cur-details">
       <div class="cur-condition">${cur.condition.label}</div>
       <div class="cur-meta">
-        Feels like ${cur.feels_like_c}°C | ${icon("droplet", 18)} ${cur.humidity_pct}%
+        Feels like ${cur.feels_like_c}°C | ${icon("droplet", 18)} ${cur.humidity_pct}% | ${windStr}
       </div>
-      <div class="cur-meta">${windStr}</div>
-      ${device ? `<div class="cur-indoor">${icon("house", 20)}<span>${device.indoor_temp_c}°C</span><span>|</span>${icon("droplet", 16)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
       ${sunLine}
     </div>
   </div>
