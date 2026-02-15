@@ -10,7 +10,7 @@
  * during its defining action — dramatic, recognizable, unmistakable.
  */
 
-import type { Env, MomentBeforeData } from "./types";
+import type { Env, MomentBeforeData, CachedValue } from "./types";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
@@ -167,4 +167,27 @@ function fallback(): MomentBeforeData {
       "the rocket clearing the launch tower against a bright sky. " +
       "Strong silhouette separation, dramatic lighting, cinematic composition.",
   };
+}
+
+const MOMENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Get or generate the shared Moment Before data for a given date.
+ * Caches in KV so all pipelines (A, B, color) share the same event per day.
+ */
+export async function getOrGenerateMoment(
+  env: Env,
+  events: Array<{ year: number; text: string }>,
+  dateStr: string,
+): Promise<MomentBeforeData> {
+  const cacheKey = `moment:v1:${dateStr}`;
+
+  const cached = await env.CACHE.get<CachedValue<MomentBeforeData>>(cacheKey, "json");
+  if (cached && Date.now() - cached.timestamp < MOMENT_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const moment = await generateMomentBefore(env, events);
+  await env.CACHE.put(cacheKey, JSON.stringify({ data: moment, timestamp: Date.now() }));
+  return moment;
 }
