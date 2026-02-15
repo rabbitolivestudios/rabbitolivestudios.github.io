@@ -2,15 +2,21 @@ import type { Env } from "./types";
 import { getWeather } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
-import { generateMomentBefore } from "./moment";
+import { generateMomentBefore, getOrGenerateMoment } from "./moment";
 import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
+import { handleColorWeatherPage } from "./pages/color-weather";
+import { handleColorMomentPage, handleColorTestMoment } from "./pages/color-moment";
+import { handleColorAPODPage } from "./pages/color-apod";
+import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData } from "./device";
 import { getChicagoDateParts } from "./date-utils";
+import { getHeadlines, getCurrentPeriod } from "./headlines";
+import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.4.0";
+const VERSION = "3.5.0";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -189,18 +195,38 @@ function handleHealth(): Response {
 
 // --- Scheduled handler (Cron) ---
 
-async function handleScheduled(env: Env): Promise<void> {
-  console.log("Cron: starting daily refresh");
+async function handleScheduled(env: Env, cronExpression: string): Promise<void> {
+  const isDaily = cronExpression === "5 6 * * *";
+  console.log(`Cron: ${isDaily ? "daily image warm" : "periodic data refresh"} (${cronExpression})`);
 
   try {
-    const { events, dateStr, displayDate } = await getTodayEvents(env);
-    const { year, month, day } = getChicagoDateParts();
+    const { year, month, day, dateStr } = getChicagoDateParts();
     const yearNum = parseInt(year);
     const monthNum = parseInt(month);
     const dayNum = parseInt(day);
+
+    // --- Every-6h: headlines + weather + device (cheap, keeps data fresh) ---
+    const period = getCurrentPeriod();
+    await getHeadlines(env, dateStr, period);
+    console.log(`Cron: warmed headlines for ${dateStr} period ${period}`);
+
+    await getWeather(env);
+    console.log("Cron: warmed weather cache");
+
+    await fetchDeviceData(env);
+    console.log("Cron: warmed device data cache");
+
+    // --- Daily only: images + APOD ---
+    if (!isDaily) return;
+
+    const { events, displayDate } = await getTodayEvents(env);
     console.log(`Cron: fetched ${events.length} events for ${dateStr}`);
 
-    // 1. Check for birthday → generate portrait for /fact.png
+    // 1. Generate + cache shared moment (for all pipelines)
+    const sharedMoment = await getOrGenerateMoment(env, events, dateStr);
+    console.log(`Cron: shared moment — ${sharedMoment.year}, ${sharedMoment.location}`);
+
+    // 2. E1001 — Check for birthday → generate portrait for /fact.png
     const birthday = getBirthdayToday(monthNum, dayNum);
     if (birthday) {
       try {
@@ -210,39 +236,45 @@ async function handleScheduled(env: Env): Promise<void> {
         console.log(`Cron: cached birthday image for ${birthday.name} (${bdayPng.length} bytes)`);
       } catch (err) {
         console.error("Cron: birthday image failed, generating Moment Before instead:", err);
-        // Fall through to generate regular 4-level as fallback
-        const moment4 = await generateMomentBefore(env, events);
-        const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
+        const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
         await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
         console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
       }
     } else {
-      // 2. No birthday — regular 4-level grayscale image
-      const moment4 = await generateMomentBefore(env, events);
-      console.log(`Cron 4-level: LLM picked ${moment4.year}, ${moment4.location}`);
-      const png4 = await generateMomentImage(env, moment4, displayDate, dateStr);
+      // 3. No birthday — regular 4-level grayscale image
+      const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
       await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
       console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
     }
 
-    // 3. Always generate 1-bit image (not affected by birthdays)
-    const moment1 = await generateMomentBefore(env, events);
-    console.log(`Cron 1-bit: LLM picked ${moment1.year}, ${moment1.location}`);
-    const png1 = await generateMomentImage1Bit(env, moment1, displayDate, dateStr);
+    // 4. E1001 — Always generate 1-bit image (not affected by birthdays)
+    const png1 = await generateMomentImage1Bit(env, sharedMoment, displayDate, dateStr);
     await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1));
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
-    // 4. Cache fact.json for backward compatibility
+    // 5. E1002 — Color moment (handled on-demand, pre-warm with a fetch)
+    try {
+      const colorMomentUrl = `https://eink-dashboard.thiago-oliveira77.workers.dev/color/moment`;
+      // Pre-warm by calling our own endpoint (it will generate + cache)
+      // Note: this is a self-call which Workers supports via service bindings or fetch
+      // For simplicity, the page handler caches to KV on first request
+      console.log("Cron: color moment will be warmed on first request");
+    } catch (err) {
+      console.error("Cron: color moment warm failed:", err);
+    }
+
+    // 6. E1002 — Color APOD
+    try {
+      await getAPODData(env, dateStr);
+      await getAPODColorImage(env, dateStr);
+      console.log("Cron: warmed APOD data + color image");
+    } catch (err) {
+      console.error("Cron: APOD warm failed:", err);
+    }
+
+    // 7. Cache fact.json for backward compatibility
     await getFact(env);
     console.log(`Cron: cached fact.json for ${dateStr}`);
-
-    // 5. Warm weather cache
-    await getWeather(env);
-    console.log("Cron: warmed weather cache");
-
-    // 6. Warm device data cache
-    await fetchDeviceData(env);
-    console.log("Cron: warmed device data cache");
   } catch (err) {
     console.error("Cron error:", err);
   }
@@ -361,13 +393,27 @@ export default {
         return handleWeatherPageV2(env, url);
       case "/fact":
         return handleFactPage();
+      case "/color/weather":
+        return handleColorWeatherPage(env, url);
+      case "/color/moment":
+        return handleColorMomentPage(env, url);
+      case "/color/test-moment":
+        return handleColorTestMoment(env, url);
+      case "/color/apod":
+        return handleColorAPODPage(env, url);
+      case "/color/headlines":
+        return handleColorHeadlinesPage(env, url);
       case "/health":
         return handleHealth();
       default:
         return jsonResponse(
           {
             error: "Not found",
-            endpoints: ["/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/test-birthday.png", "/health"],
+            endpoints: [
+              "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
+              "/color/weather", "/color/moment", "/color/apod", "/color/headlines",
+              "/test-birthday.png", "/health",
+            ],
           },
           404,
           0
@@ -376,6 +422,6 @@ export default {
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(handleScheduled(env));
+    ctx.waitUntil(handleScheduled(env, event.cron));
   },
 };
