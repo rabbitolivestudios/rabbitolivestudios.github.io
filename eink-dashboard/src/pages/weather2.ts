@@ -60,6 +60,23 @@ const ICONS: Record<string, string> = {
     <path d="M8 14h16a5 5 0 0 0 0-10h-1a7 7 0 0 0-13.6-1A4 4 0 0 0 8 14z" fill="#000"/>
     <polygon points="18,16 13,24 16,24 14,32 21,22 17,22 20,16" fill="#000"/>
   </svg>`,
+  sunrise: `<svg viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 3v6" /><path d="M13 6l3-3 3 3"/>
+    <line x1="5" y1="14" x2="8" y2="11"/><line x1="27" y1="14" x2="24" y2="11"/>
+    <path d="M6 22a10 10 0 0 1 20 0" fill="none"/>
+    <line x1="2" y1="22" x2="30" y2="22"/>
+  </svg>`,
+  sunset: `<svg viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 9v-6"/><path d="M13 6l3 3 3-3"/>
+    <line x1="5" y1="14" x2="8" y2="11"/><line x1="27" y1="14" x2="24" y2="11"/>
+    <path d="M6 22a10 10 0 0 1 20 0" fill="none"/>
+    <line x1="2" y1="22" x2="30" y2="22"/>
+  </svg>`,
+  wind: `<svg viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round">
+    <path d="M3 10h16a3 3 0 1 0-3-3"/>
+    <path d="M3 16h20a3 3 0 1 1-3 3"/>
+    <path d="M3 22h12a3 3 0 1 0-3-3"/>
+  </svg>`,
 };
 
 function icon(key: string, size: number): string {
@@ -152,14 +169,14 @@ function renderHTML(w: WeatherResponse): string {
   const cur = w.current;
 
   // Wind string
-  let windStr = `Wind ${cur.wind_dir_label} ${cur.wind_kmh} km/h`;
+  let windStr = `${icon("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh} km/h`;
   if (cur.wind_gusts_kmh > cur.wind_kmh + 10) {
     windStr += ` | Gusts ${cur.wind_gusts_kmh}`;
   }
 
   // Sunrise/sunset
   const sunLine = w.sunrise && w.sunset
-    ? `<div class="cur-sun">Sunrise ${formatSunTime(w.sunrise)} | Sunset ${formatSunTime(w.sunset)}</div>`
+    ? `<div class="cur-sun">${icon("sunrise", 22)} ${formatSunTime(w.sunrise)} &nbsp; ${icon("sunset", 22)} ${formatSunTime(w.sunset)}</div>`
     : "";
 
   // Daily forecast
@@ -168,7 +185,7 @@ function renderHTML(w: WeatherResponse): string {
     return `
       <div class="day">
         <div class="day-name">${formatDate(d.date)}</div>
-        <div class="day-icon">${icon(d.icon, 32)}</div>
+        <div class="day-icon">${icon(d.icon, 38)}</div>
         <div class="day-temps">${d.high_c}° / ${d.low_c}°</div>
         <div class="day-precip">${precipStr}</div>
       </div>`;
@@ -199,7 +216,7 @@ function renderHTML(w: WeatherResponse): string {
   const hourlyHTML = futureHours.slice(0, 6).map(h => `
       <div class="hour">
         <div class="hour-time">${formatTime(h.time)}</div>
-        <div class="hour-icon">${icon(h.icon, 24)}</div>
+        <div class="hour-icon">${icon(h.icon, 28)}</div>
         <div class="hour-temp">${h.temp_c}°</div>
         <div class="hour-precip">${h.precip_prob_pct > 0 ? h.precip_prob_pct + "% rain" : ""}</div>
       </div>`).join("");
@@ -223,19 +240,19 @@ function renderHTML(w: WeatherResponse): string {
     display: flex; justify-content: space-between; align-items: baseline;
     margin-bottom: 12px;
   }
-  .location { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+  .location { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
   .datetime { font-size: 16px; font-weight: 500; }
 
   .current {
     display: flex; align-items: center; gap: 20px;
     margin-bottom: 4px;
   }
-  .cur-temp { font-size: 72px; font-weight: 700; line-height: 1; }
+  .cur-temp { font-size: 80px; font-weight: 700; line-height: 1; }
   .cur-icon { line-height: 0; }
-  .cur-details { font-size: 16px; }
-  .cur-condition { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-  .cur-meta { font-size: 16px; font-weight: 500; }
-  .cur-sun { font-size: 14px; font-weight: 500; margin-top: 2px; }
+  .cur-details { font-size: 18px; }
+  .cur-condition { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+  .cur-meta { font-size: 18px; font-weight: 500; }
+  .cur-sun { font-size: 16px; font-weight: 500; margin-top: 2px; }
 
   .divider {
     border: none; border-top: 2px solid #000;
@@ -243,7 +260,7 @@ function renderHTML(w: WeatherResponse): string {
   }
 
   .section-label {
-    font-size: 13px; font-weight: 700; letter-spacing: 1.5px;
+    font-size: 14px; font-weight: 700; letter-spacing: 1.5px;
     margin-bottom: 8px; text-transform: uppercase;
   }
 
@@ -255,19 +272,19 @@ function renderHTML(w: WeatherResponse): string {
     border: 2px solid #000; border-radius: 6px;
     padding: 8px 4px;
   }
-  .day-name { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+  .day-name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
   .day-icon { margin: 4px 0; line-height: 0; }
-  .day-temps { font-size: 16px; font-weight: 700; }
-  .day-precip { font-size: 12px; font-weight: 500; }
+  .day-temps { font-size: 18px; font-weight: 700; }
+  .day-precip { font-size: 14px; font-weight: 500; }
 
   .alert-banner {
     background: #000; color: #fff;
-    font-size: 14px; font-weight: 700;
+    font-size: 16px; font-weight: 700;
     padding: 6px 10px; text-align: center;
     margin-bottom: 8px;
   }
   .rain-warning {
-    font-size: 14px; font-weight: 700;
+    font-size: 16px; font-weight: 700;
     margin-bottom: 8px;
   }
 
@@ -279,10 +296,10 @@ function renderHTML(w: WeatherResponse): string {
     border: 2px solid #000; border-radius: 6px;
     padding: 6px 4px;
   }
-  .hour-time { font-size: 13px; font-weight: 700; }
+  .hour-time { font-size: 15px; font-weight: 700; }
   .hour-icon { margin: 2px 0; line-height: 0; }
-  .hour-temp { font-size: 16px; font-weight: 700; }
-  .hour-precip { font-size: 12px; font-weight: 500; }
+  .hour-temp { font-size: 18px; font-weight: 700; }
+  .hour-precip { font-size: 14px; font-weight: 500; }
 </style>
 </head>
 <body>
@@ -293,7 +310,7 @@ function renderHTML(w: WeatherResponse): string {
 
   <div class="current">
     <div class="cur-temp">${cur.temp_c}°C</div>
-    <div class="cur-icon">${icon(cur.condition.icon, 56)}</div>
+    <div class="cur-icon">${icon(cur.condition.icon, 64)}</div>
     <div class="cur-details">
       <div class="cur-condition">${cur.condition.label}</div>
       <div class="cur-meta">
@@ -342,6 +359,11 @@ export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response>
   // ?test-rain injects fake 15-min precipitation
   if (url.searchParams.has("test-rain")) {
     weather.precip_next_2h = [0, 0, 0.2, 0.5, 0.8, 0.3, 0, 0];
+  }
+  // ?test-temp=N overrides current temperature
+  const testTemp = url.searchParams.get("test-temp");
+  if (testTemp !== null) {
+    weather.current.temp_c = parseInt(testTemp, 10);
   }
 
   const html = renderHTML(weather);
