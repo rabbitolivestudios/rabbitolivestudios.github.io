@@ -442,9 +442,10 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 - Previously each pipeline made its own LLM call — could pick different events
 
 **Color style prompt:**
-- `"screen print poster, flat inks, bold shapes, iconic composition, high contrast, minimal shading, no gradients"`
-- This produces images with flat color areas that dither well to 6 colors
-- Avoids gradients which create banding artifacts in limited palettes
+- Initially used `"screen print poster, flat inks, bold shapes..."` — produced overly blocky/posterized results when dithered to 6 colors
+- Switched to **natural style (no prefix)** — scene-only `imagePrompt` + anti-text suffix
+- Floyd-Steinberg handles natural photos well; the poster style was too aggressive
+- The dithering itself provides the artistic quality — no need for style constraints
 
 **APOD integration:**
 - NASA APOD API key stored as Cloudflare secret (`wrangler secret put APOD_API_KEY`)
@@ -474,7 +475,7 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 | Floyd-Steinberg for Spectra 6 color | Used Floyd-Steinberg | Spectra 6 renders pixels exactly — no double-dithering issue; FS gives best 6-color results |
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
 | Server-side color page rendering as PNG | HTML with inline base64 PNG | SenseCraft screenshots HTML; HTML caption is crisper than bitmap font on indexed image |
-| User-configurable location | Hardcoded Naperville, IL | Single-user deployment; easy to change in code |
+| User-configurable location | Hardcoded per-device (Naperville E1001, Chicago E1002) | Single-user; E1001 at home (60540), E1002 at office (60606) |
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
 | "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |
 | Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
