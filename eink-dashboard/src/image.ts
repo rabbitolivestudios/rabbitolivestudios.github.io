@@ -18,8 +18,8 @@ import { measureText } from "./font";
 import { FONT_8X8 as FONT_DATA } from "./font";
 import type { Env, MomentBeforeData } from "./types";
 
-const WIDTH = 800;
-const HEIGHT = 480;
+export const WIDTH = 800;
+export const HEIGHT = 480;
 
 // /fact.png generation params (DO NOT CHANGE)
 const SDXL_STEPS = 20;
@@ -68,7 +68,7 @@ async function generateAIImage(
 
 // --- Bilinear resize (grayscale) ---
 
-function resizeGray(
+export function resizeGray(
   src: Uint8Array,
   srcW: number,
   srcH: number,
@@ -105,7 +105,7 @@ function resizeGray(
 
 // --- Center-crop to target aspect ratio ---
 
-function centerCropGray(
+export function centerCropGray(
   src: Uint8Array,
   srcW: number,
   srcH: number,
@@ -143,7 +143,7 @@ const BAR_H = 24;
 const BAR_PAD = 8;
 const CAPTION_SCALE = 1;    // 8px bitmap font, small and subtle
 
-function drawText(
+export function drawText(
   buf: Uint8Array,
   x: number,
   y: number,
@@ -313,7 +313,7 @@ export async function generateMomentImageRaw(
 
 // --- Tone curve ---
 
-function applyToneCurve(gray: Uint8Array, contrast: number, gamma: number): void {
+export function applyToneCurve(gray: Uint8Array, contrast: number, gamma: number): void {
   for (let i = 0; i < gray.length; i++) {
     let x = (gray[i] - 128) * contrast + 128;
     if (x < 0) x = 0;
@@ -325,7 +325,7 @@ function applyToneCurve(gray: Uint8Array, contrast: number, gamma: number): void
 
 // --- 4-level quantization (no dithering) ---
 
-function quantize4Level(gray: Uint8Array): void {
+export function quantize4Level(gray: Uint8Array): void {
   for (let i = 0; i < gray.length; i++) {
     const v = gray[i];
     if (v < 64) gray[i] = 0;

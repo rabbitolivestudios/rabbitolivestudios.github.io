@@ -2,6 +2,7 @@ export interface Env {
   CACHE: KVNamespace;
   AI: Ai;
   IMAGES: any;
+  PHOTOS: R2Bucket;
 }
 
 // --- Moment Before types ---

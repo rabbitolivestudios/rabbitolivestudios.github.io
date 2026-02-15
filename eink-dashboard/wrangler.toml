@@ -17,6 +17,11 @@ binding = "AI"
 [images]
 binding = "IMAGES"
 
+# R2 bucket for birthday reference photos
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "eink-birthday-photos"
+
 # Daily cron at 10:00 UTC = 04:00 CST (America/Chicago)
 [triggers]
 crons = ["0 10 * * *"]
