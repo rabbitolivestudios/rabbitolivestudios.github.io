@@ -253,12 +253,15 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
   const styleIdx = styleParam !== null ? parseInt(styleParam) : undefined;
   const currentYear = new Date().getFullYear();
 
-  const imageB64 = await generateColorBirthday(env, person, currentYear, styleIdx);
-  const moment: MomentBeforeData = { year: currentYear, location: "", title: person.name, scene: "", imagePrompt: "" };
-  const captionDate = "Birthday";
-
-  const html = renderHTML(imageB64, moment, captionDate, true);
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  try {
+    const imageB64 = await generateColorBirthday(env, person, currentYear, styleIdx);
+    const moment: MomentBeforeData = { year: currentYear, location: "", title: person.name, scene: "", imagePrompt: "" };
+    const html = renderHTML(imageB64, moment, "Birthday", true);
+    return new Response(html, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  } catch (err) {
+    console.error("Color test birthday error:", err);
+    return new Response("Failed to generate color birthday image", { status: 503 });
+  }
 }
