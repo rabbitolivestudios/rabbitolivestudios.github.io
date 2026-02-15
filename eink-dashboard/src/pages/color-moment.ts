@@ -109,21 +109,30 @@ async function generateColorBirthday(
   return pngToBase64(png);
 }
 
+interface BirthdayCaptionInfo {
+  name: string;
+  age: number;
+  styleName: string;
+}
+
 function renderHTML(
   imageB64: string,
   moment: MomentBeforeData,
   displayDate: string,
-  isBirthday: boolean = false,
+  birthdayInfo?: BirthdayCaptionInfo,
 ): string {
-  const location = moment.location.length > 35
-    ? moment.location.slice(0, 32) + "..."
-    : moment.location;
-  const title = moment.title || moment.scene.slice(0, 40);
-  const dateLine = `${displayDate}, ${moment.year}`;
-
-  const captionHTML = isBirthday
-    ? `<span class="cap-center">Happy Birthday!</span>`
-    : `<span class="cap-left">${location}</span><span class="cap-center">${title}</span><span class="cap-right">${dateLine}</span>`;
+  let captionHTML: string;
+  if (birthdayInfo) {
+    // Match E1001: "Happy Birthday!" left | "Name - age years" center | style right
+    captionHTML = `<span class="cap-left">Happy Birthday!</span><span class="cap-center">${birthdayInfo.name} - ${birthdayInfo.age} years</span><span class="cap-right">${birthdayInfo.styleName}</span>`;
+  } else {
+    const location = moment.location.length > 35
+      ? moment.location.slice(0, 32) + "..."
+      : moment.location;
+    const title = moment.title || moment.scene.slice(0, 40);
+    const dateLine = `${displayDate}, ${moment.year}`;
+    captionHTML = `<span class="cap-left">${location}</span><span class="cap-center">${title}</span><span class="cap-right">${dateLine}</span>`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -185,10 +194,9 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 
   const cached = await env.CACHE.get(cacheKey);
   if (cached) {
-    // Cached value is JSON: { imageB64, moment, displayDate, isBirthday }
     try {
       const data = JSON.parse(cached);
-      const html = renderHTML(data.imageB64, data.moment, data.displayDate, data.isBirthday);
+      const html = renderHTML(data.imageB64, data.moment, data.displayDate, data.birthdayInfo);
       return new Response(html, {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" },
       });
@@ -197,19 +205,21 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const displayDate = `${months[monthNum - 1]} ${dayNum}`;
+  const currentYear = parseInt(year);
 
   let imageB64: string;
   let moment: MomentBeforeData;
-  let isBirthday = false;
+  let birthdayInfo: BirthdayCaptionInfo | undefined;
 
   if (birthday) {
-    isBirthday = true;
-    moment = { year: parseInt(year), location: "", title: birthday.name, scene: "", imagePrompt: "" };
+    const age = currentYear - birthday.birthYear;
+    const style = getArtStyle(currentYear);
+    moment = { year: currentYear, location: "", title: birthday.name, scene: "", imagePrompt: "" };
     try {
-      imageB64 = await generateColorBirthday(env, birthday, parseInt(year));
+      imageB64 = await generateColorBirthday(env, birthday, currentYear);
+      birthdayInfo = { name: birthday.name, age, styleName: style.name };
     } catch (err) {
       console.error("Color birthday failed, falling back to moment:", err);
-      isBirthday = false;
       const { events } = await getTodayEvents(env);
       moment = await getOrGenerateMoment(env, events, dateStr);
       imageB64 = await generateColorMoment(env, moment);
@@ -221,10 +231,10 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
   }
 
   // Cache the result
-  const cacheData = JSON.stringify({ imageB64, moment, displayDate, isBirthday });
+  const cacheData = JSON.stringify({ imageB64, moment, displayDate, birthdayInfo });
   await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 86400 });
 
-  const html = renderHTML(imageB64, moment, displayDate, isBirthday);
+  const html = renderHTML(imageB64, moment, displayDate, birthdayInfo);
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" },
   });
@@ -267,9 +277,12 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
   const currentYear = new Date().getFullYear();
 
   try {
+    const style = styleIdx !== undefined ? getArtStyle(2020 + styleIdx) : getArtStyle(currentYear);
+    const age = currentYear - person.birthYear;
     const imageB64 = await generateColorBirthday(env, person, currentYear, styleIdx);
     const moment: MomentBeforeData = { year: currentYear, location: "", title: person.name, scene: "", imagePrompt: "" };
-    const html = renderHTML(imageB64, moment, "Birthday", true);
+    const birthdayInfo: BirthdayCaptionInfo = { name: person.name, age, styleName: style.name };
+    const html = renderHTML(imageB64, moment, "Birthday", birthdayInfo);
     return new Response(html, {
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     });
