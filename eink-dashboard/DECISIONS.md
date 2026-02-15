@@ -409,15 +409,71 @@ FLUX.2 klein models have steps fixed at 4 (cannot be adjusted). The 9b model pro
 
 ---
 
-## 14. What We Didn't Do (and why)
+## 14. E1002 Color E-Ink Support (v3.5.0)
+
+### Decision: Floyd-Steinberg dithering to 6-color Spectra palette
+
+The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment colors (black, white, red, yellow, green, blue). Unlike the E1001's monochrome display, this one can show actual colors.
+
+**Why Floyd-Steinberg for color (but not for mono):**
+- For the E1001 mono display, Floyd-Steinberg produced "dot soup" — the display's own dithering doubled the artifacts
+- For the E1002 Spectra 6, the display renders pixels exactly as sent (no additional dithering)
+- Floyd-Steinberg error diffusion produces excellent results when mapping to a fixed 6-color palette
+- The visual quality is significantly better than nearest-color mapping alone
+
+**Measured palette values (sRGB):**
+| Color | RGB |
+|-------|-----|
+| Black | (0, 0, 0) |
+| White | (255, 255, 255) |
+| Red | (178, 19, 24) |
+| Yellow | (239, 222, 68) |
+| Green | (18, 95, 32) |
+| Blue | (33, 87, 186) |
+
+**Palette-indexed PNG (color type 3):**
+- Added `encodePNGIndexed()` to png.ts — IHDR (bit depth 8, color type 3) + PLTE chunk + IDAT
+- One index byte per pixel (palette indices 0-5)
+- Images served as inline base64 in HTML pages (SenseCraft HMI screenshots HTML)
+
+**Shared moment cache:**
+- All pipelines (A, B, color) now share the same LLM-selected event per day
+- `getOrGenerateMoment()` in moment.ts checks KV (`moment:v1:{dateStr}`) before calling LLM
+- Previously each pipeline made its own LLM call — could pick different events
+
+**Color style prompt:**
+- `"screen print poster, flat inks, bold shapes, iconic composition, high contrast, minimal shading, no gradients"`
+- This produces images with flat color areas that dither well to 6 colors
+- Avoids gradients which create banding artifacts in limited palettes
+
+**APOD integration:**
+- NASA APOD API key stored as Cloudflare secret (`wrangler secret put APOD_API_KEY`)
+- Falls back to `DEMO_KEY` (rate limited but works)
+- HD image URL preferred for better dither quality
+
+**Headlines RSS + LLM summarization:**
+- Google News RSS + Federal Register API
+- LLM summarizes to 2 lines per headline (temperature 0.3 for factual output)
+- Cached 6h per period (0/6/12/18 hours, Chicago time)
+- Categorized by keywords: tariffs, markets, company, regulatory
+
+**Cron schedule change:**
+- Was: daily at 10:00 UTC
+- Now: `"5 6 * * *"` (daily images at 06:05 UTC) + `"5 0,6,12,18 * * *"` (headlines/weather every 6h)
+
+---
+
+## 15. What We Didn't Do (and why)
 
 | Consideration | Decision | Reason |
 |---------------|----------|--------|
 | External APIs (DALL-E, Google) | Stayed with Workers AI | No API keys needed, lower latency, simpler architecture |
 | Client-side rendering | Server-side PNG | E-ink devices have limited processing power |
-| Color output | Grayscale only | Target display is grayscale e-ink |
-| Floyd-Steinberg dithering for 1-bit | 8×8 Bayer ordered dithering | Floyd-Steinberg creates random-looking noise on e-ink; Bayer is deterministic and stable |
+| Color output for E1001 | Grayscale only for mono display | E1001 is monochrome — color would be downconverted |
+| Floyd-Steinberg dithering for 1-bit mono | 8×8 Bayer ordered dithering | Floyd-Steinberg creates random-looking noise on mono e-ink; Bayer is deterministic and stable |
+| Floyd-Steinberg for Spectra 6 color | Used Floyd-Steinberg | Spectra 6 renders pixels exactly — no double-dithering issue; FS gives best 6-color results |
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
+| Server-side color page rendering as PNG | HTML with inline base64 PNG | SenseCraft screenshots HTML; HTML caption is crisper than bitmap font on indexed image |
 | User-configurable location | Hardcoded Naperville, IL | Single-user deployment; easy to change in code |
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
 | "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |

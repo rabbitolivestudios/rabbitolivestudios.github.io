@@ -66,27 +66,35 @@ npx wrangler dev --port 8790
 # Deploy to production
 npx wrangler deploy
 
-# Test endpoints
+# Test endpoints (E1001)
 curl http://localhost:8790/weather?test-device
 curl http://localhost:8790/weather?test-device&test-alert=tornado
 curl http://localhost:8790/fact.png
 curl http://localhost:8790/test.png?m=10&d=31
+
+# Test endpoints (E1002 color)
+curl http://localhost:8790/color/weather?test-device
+curl http://localhost:8790/color/weather?test-device&test-alert=tornado
+curl http://localhost:8790/color/headlines?test-headlines
+curl http://localhost:8790/color/test-moment?m=7&d=20
+curl http://localhost:8790/color/apod
 ```
 
 Always build before committing. Do not commit code that doesn't compile.
 
 ---
 
-## Two Pipelines — DO NOT Cross-Contaminate
+## Image Pipelines — DO NOT Cross-Contaminate
 
-This project has two independent image pipelines. They share the LLM event selection but diverge at style injection, image model, and post-processing. Changes to one pipeline must not affect the other.
+This project has independent image pipelines. They share the LLM event selection (via `getOrGenerateMoment`) but diverge at style injection, image model, and post-processing. Changes to one pipeline must not affect the others.
 
-| | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) |
-|---|---|---|
-| Model | FLUX.2 klein-9b | SDXL |
-| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) |
-| Output | 4-level grayscale | 1-bit (Bayer or threshold) |
-| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` |
+| | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) | Pipeline D (`/color/moment`) |
+|---|---|---|---|
+| Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) |
+| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | Screen print poster (flat inks) |
+| Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v1:YYYY-MM-DD` |
+| Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) |
 
 ---
 

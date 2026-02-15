@@ -1,9 +1,10 @@
 # E-Ink "Moment Before" Dashboard
 
-A Cloudflare Workers backend for the **reTerminal E1001** (ESP32-S3, 7.5" ePaper, 800x480).
+A Cloudflare Workers backend for the **reTerminal E1001** (ESP32-S3, 7.5" ePaper, 800x480, monochrome) and **reTerminal E1002** (ESP32-S3, 7.3" E Ink Spectra 6, 800x480, 6-color).
+
 Every day it generates an AI illustration depicting a famous historical event at its most iconic, dramatic moment — the viewer sees the scene, the location, and the date.
 
-Also serves weather data for Naperville, IL and a daily "On This Day" historical fact — all free, no API keys required.
+Also serves weather data for Naperville, IL, NASA APOD (Astronomy Picture of the Day), steel/trade headlines, and a daily "On This Day" historical fact.
 
 ## The Concept
 
@@ -30,6 +31,13 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /test-birthday.png?name=KEY` | Generate birthday portrait for a person (e.g. `?name=thiago&style=3`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /weather?test-device` | Weather dashboard with fake device data (22°C, 45%, battery 73%) | none |
+| **E1002 Color Endpoints** | | |
+| `GET /color/weather` | 800x480 color HTML weather dashboard (Spectra 6 palette accents) | 30 min |
+| `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
+| `GET /color/apod` | 800x480 color NASA APOD image (dithered to 6 colors) | 24 hours |
+| `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
+| `GET /color/test-moment?m=MM&d=DD` | Generate color moment for any date | none |
+| `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
 | `GET /health` | Status check | none |
 
 ## Live URL
@@ -78,7 +86,15 @@ id = "your-namespace-id-here"
 npx wrangler deploy
 ```
 
-Your worker URL will be printed. The daily cron runs at 10:00 UTC (4:00 AM Chicago).
+Your worker URL will be printed. The cron runs daily at 06:05 UTC (images) and every 6 hours (headlines/weather).
+
+### Step 5: Set APOD API Key (Optional)
+
+```bash
+npx wrangler secret put APOD_API_KEY
+```
+
+Get a free key from [api.nasa.gov](https://api.nasa.gov). Falls back to `DEMO_KEY` (rate limited).
 
 ### Step 5: Test
 
@@ -205,6 +221,37 @@ npm run upload-photos
 
 Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc. (max 4 per person, pre-resized to <512x512).
 
+### Pipeline D: Color Spectra 6 (`/color/moment`)
+
+Uses **FLUX.2 klein-9b** (fallback SDXL) with a "screen print poster" style, then Floyd-Steinberg dithers to the 6-color Spectra palette.
+
+```
+Shared Moment (from KV cache or LLM)
+        │
+        ▼
+Prepend "screen print poster, flat inks, bold shapes" + anti-text suffix
+        │
+        ▼
+FLUX.2 klein-9b → JPEG  [fallback: SDXL]
+        │
+        ▼
+Cloudflare Images (JPEG → PNG) → decode RGB
+        │
+        ▼
+Center-crop → resize to 800x480 (RGB)
+        │
+        ▼
+Floyd-Steinberg dithering → 6-color Spectra palette indices
+        │
+        ▼
+Palette-indexed PNG → base64 → inline in HTML page
+        │
+        ▼
+KV cache (24h)
+```
+
+**Spectra 6 palette**: Black (0,0,0), White (255,255,255), Red (178,19,24), Yellow (239,222,68), Green (18,95,32), Blue (33,87,186).
+
 ### Key Technical Details
 
 - **Image models**: FLUX.2 klein-9b (Pipeline A), SDXL (Pipeline B + fallback)
@@ -223,19 +270,23 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 ┌─────────────┐     ┌──────────────────────┐     ┌──────────────┐
 │  reTerminal  │────▶│  Cloudflare Worker    │────▶│  Wikipedia    │
 │  E1001       │     │                      │     │  (events)     │
-│  (ePaper)    │◀────│  ┌────────────────┐  │     └──────────────┘
+│  (mono ePaper│◀────│  ┌────────────────┐  │     └──────────────┘
 └─────────────┘     │  │ Workers AI     │  │     ┌──────────────┐
-                     │  │ • Llama 3.3   │  │────▶│  Open-Meteo   │
-                     │  │ • FLUX.2/SDXL │  │     │  (weather)    │
-                     │  ├────────────────┤  │     └──────────────┘
-                     │  │ Images API     │  │     ┌──────────────┐
-                     │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
+┌─────────────┐     │  │ • Llama 3.3   │  │────▶│  Open-Meteo   │
+│  reTerminal  │────▶│  │ • FLUX.2/SDXL │  │     │  (weather)    │
+│  E1002       │     │  ├────────────────┤  │     └──────────────┘
+│  (Spectra 6) │◀────│  │ Images API     │  │     ┌──────────────┐
+└─────────────┘     │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
                      │  ├────────────────┤  │     │  (alerts)     │
                      │  │ KV Cache       │  │     └──────────────┘
-                     │  │ (24h TTL)      │  │     ┌──────────────┐
-                     │  └────────────────┘  │────▶│  SenseCraft   │
-                     └──────────────────────┘     │  HMI API      │
-                                                  │  (device data) │
+                     │  │ (24h/6h TTL)   │  │     ┌──────────────┐
+                     │  ├────────────────┤  │────▶│  NASA APOD    │
+                     │  │ R2 Bucket      │  │     │  (astronomy)  │
+                     │  │ (photos)       │  │     └──────────────┘
+                     │  └────────────────┘  │     ┌──────────────┐
+                     └──────────────────────┘────▶│  Google News  │
+                                                  │  + Fed Register│
+                                                  │  (headlines)  │
                                                   └──────────────┘
 ```
 
@@ -245,8 +296,9 @@ Photos go in `photos/portraits/` with naming: `{key}_0.jpg`, `{key}_1.jpg`, etc.
 |---------|---------|---------|
 | `env.AI` | Workers AI | LLM + image generation (SDXL + FLUX.2) |
 | `env.IMAGES` | Cloudflare Images | JPEG → PNG conversion |
-| `env.CACHE` | KV Namespace | Response caching (24h) |
+| `env.CACHE` | KV Namespace | Response caching (24h/6h) |
 | `env.PHOTOS` | R2 Bucket | Birthday reference photos |
+| `env.APOD_API_KEY` | Secret | NASA APOD API key (optional, falls back to DEMO_KEY) |
 
 ---
 
