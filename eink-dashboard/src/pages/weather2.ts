@@ -257,12 +257,12 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
     width: 800px; height: 480px; overflow: hidden;
     background: #fff; color: #000;
     font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-    padding: 20px 28px;
+    padding: 16px 28px;
   }
 
   .header {
     display: flex; justify-content: space-between; align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
   .location { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
   .header-right { text-align: right; }
@@ -288,7 +288,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 
   .section-label {
     font-size: 14px; font-weight: 700; letter-spacing: 1.5px;
-    margin-bottom: 8px; text-transform: uppercase;
+    margin-bottom: 4px; text-transform: uppercase;
   }
 
   .daily {
@@ -297,7 +297,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   .day {
     flex: 1; text-align: center;
     border: 2px solid #000; border-radius: 6px;
-    padding: 8px 4px;
+    padding: 6px 4px;
   }
   .day-name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
   .day-icon { margin: 4px 0; line-height: 0; }
