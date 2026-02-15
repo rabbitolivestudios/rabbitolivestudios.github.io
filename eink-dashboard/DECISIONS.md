@@ -304,6 +304,11 @@ The reTerminal E1001's SenseCraft HMI has a "Web Function" that screenshots a UR
 - `v2.0.0` git tag marks the pre-improvement state for rollback
 - Data layer changes (types, weather.ts) are additive — no fields removed
 - Test params: `?test-alert=tornado|winter|flood`, `?test-rain`, `?test-temp=N` inject fake data for visual testing
+- `?battery=N` shows device battery level (%) below date/time in header
+
+**v2.2 tweaks:**
+- Battery level display via `?battery=N` query param — SVG icon with proportional fill + percentage, shown below date/time right-aligned
+- Sunrise/sunset icons enlarged from 22px to 28px, font from 16px to 18px for better e-ink readability
 
 **NWS alerts integration (`src/alerts.ts`):**
 - Endpoint: `https://api.weather.gov/alerts/active?point=LAT,LON`
