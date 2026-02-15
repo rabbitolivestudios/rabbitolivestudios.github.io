@@ -77,6 +77,10 @@ const ICONS: Record<string, string> = {
     <path d="M3 16h20a3 3 0 1 1-3 3"/>
     <path d="M3 22h12a3 3 0 1 0-3-3"/>
   </svg>`,
+  battery: `<svg viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="8" width="24" height="16" rx="2"/>
+    <line x1="28" y1="13" x2="28" y2="19"/>
+  </svg>`,
 };
 
 function icon(key: string, size: number): string {
@@ -152,7 +156,17 @@ function getRainWarning(w: WeatherResponse): string | null {
   return null;
 }
 
-function renderHTML(w: WeatherResponse): string {
+function batteryIcon(pct: number, size: number): string {
+  // Fill width proportional to charge (inside the battery body)
+  const fillW = Math.round(20 * Math.max(0, Math.min(100, pct)) / 100);
+  return `<span style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle"><svg viewBox="0 0 32 32" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="8" width="24" height="16" rx="2"/>
+    <rect x="4" y="10" width="${fillW}" height="12" fill="#000" stroke="none"/>
+    <line x1="28" y1="13" x2="28" y2="19"/>
+  </svg></span>`;
+}
+
+function renderHTML(w: WeatherResponse, batteryPct?: number): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -176,7 +190,7 @@ function renderHTML(w: WeatherResponse): string {
 
   // Sunrise/sunset
   const sunLine = w.sunrise && w.sunset
-    ? `<div class="cur-sun">${icon("sunrise", 22)} ${formatSunTime(w.sunrise)} &nbsp; ${icon("sunset", 22)} ${formatSunTime(w.sunset)}</div>`
+    ? `<div class="cur-sun">${icon("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${icon("sunset", 28)} ${formatSunTime(w.sunset)}</div>`
     : "";
 
   // Daily forecast
@@ -241,7 +255,8 @@ function renderHTML(w: WeatherResponse): string {
     margin-bottom: 12px;
   }
   .location { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
-  .datetime { font-size: 16px; font-weight: 500; }
+  .datetime { font-size: 16px; font-weight: 500; text-align: right; }
+  .battery { font-size: 14px; font-weight: 500; margin-top: 2px; }
 
   .current {
     display: flex; align-items: center; gap: 20px;
@@ -252,7 +267,7 @@ function renderHTML(w: WeatherResponse): string {
   .cur-details { font-size: 18px; }
   .cur-condition { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
   .cur-meta { font-size: 18px; font-weight: 500; }
-  .cur-sun { font-size: 16px; font-weight: 500; margin-top: 2px; }
+  .cur-sun { font-size: 18px; font-weight: 500; margin-top: 2px; }
 
   .divider {
     border: none; border-top: 2px solid #000;
@@ -305,7 +320,7 @@ function renderHTML(w: WeatherResponse): string {
 <body>
   <div class="header">
     <div class="location">${w.location.name.toUpperCase()}</div>
-    <div class="datetime">${dateStr} | ${timeStr}</div>
+    <div class="datetime">${dateStr} | ${timeStr}${batteryPct !== undefined ? `<div class="battery">${batteryIcon(batteryPct, 16)} ${batteryPct}%</div>` : ""}</div>
   </div>
 
   <div class="current">
@@ -366,7 +381,11 @@ export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response>
     weather.current.temp_c = parseInt(testTemp, 10);
   }
 
-  const html = renderHTML(weather);
+  // ?battery=N shows battery level in header
+  const batteryParam = url.searchParams.get("battery");
+  const batteryPct = batteryParam !== null ? parseInt(batteryParam, 10) : undefined;
+
+  const html = renderHTML(weather, Number.isNaN(batteryPct) ? undefined : batteryPct);
 
   return new Response(html, {
     headers: {
