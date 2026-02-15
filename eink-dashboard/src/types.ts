@@ -36,6 +36,9 @@ export interface CurrentWeather {
   humidity_pct: number;
   wind_kmh: number;
   wind_dir_deg: number;
+  wind_dir_label: string;
+  wind_gusts_kmh: number;
+  is_day: boolean;
   precip_mm_hr: number;
   condition: WeatherCondition;
 }
@@ -47,6 +50,7 @@ export interface HourlyEntry {
   precip_mm: number;
   code: number;
   icon: string;
+  is_day: boolean;
 }
 
 export interface DailyEntry {
@@ -54,10 +58,20 @@ export interface DailyEntry {
   high_c: number;
   low_c: number;
   precip_prob_pct: number;
+  precipitation_sum_mm: number;
+  snowfall_sum_cm: number;
   code: number;
   icon: string;
   sunrise: string;
   sunset: string;
+}
+
+export interface NWSAlert {
+  event: string;
+  severity: string;
+  headline: string;
+  onset: string;
+  expires: string;
 }
 
 export interface WeatherResponse {
@@ -66,6 +80,10 @@ export interface WeatherResponse {
   current: CurrentWeather;
   hourly_12h: HourlyEntry[];
   daily_5d: DailyEntry[];
+  precip_next_2h: number[];
+  alerts: NWSAlert[];
+  sunrise: string;
+  sunset: string;
 }
 
 // --- Fact types ---

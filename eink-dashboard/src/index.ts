@@ -4,6 +4,7 @@ import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
 import { generateMomentBefore } from "./moment";
 import { handleWeatherPage } from "./pages/weather";
+import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 
 const VERSION = "2.0.0";
@@ -42,7 +43,7 @@ function errorResponse(message: string, status: number): Response {
 async function handleWeather(env: Env): Promise<Response> {
   try {
     const weather = await getWeather(env);
-    return jsonResponse(weather, 200, 1800); // 30 min
+    return jsonResponse(weather, 200, 900); // 15 min
   } catch (err) {
     console.error("Weather error:", err);
     return jsonResponse(
@@ -336,6 +337,8 @@ export default {
       }
       case "/weather":
         return handleWeatherPage(env);
+      case "/weather2":
+        return handleWeatherPageV2(env, url);
       case "/fact":
         return handleFactPage();
       case "/health":
@@ -344,7 +347,7 @@ export default {
         return jsonResponse(
           {
             error: "Not found",
-            endpoints: ["/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/health"],
+            endpoints: ["/weather", "/weather2", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png", "/health"],
           },
           404,
           0

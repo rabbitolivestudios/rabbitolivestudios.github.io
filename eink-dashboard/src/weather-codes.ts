@@ -34,6 +34,16 @@ const WEATHER_CODES: Record<number, WeatherCodeInfo> = {
   99: { label: "Thunderstorm with heavy hail",  icon: "thunder" },
 };
 
-export function getWeatherInfo(code: number): WeatherCodeInfo {
-  return WEATHER_CODES[code] ?? { label: "Unknown", icon: "unknown" };
+const NIGHT_ICON_OVERRIDES: Record<number, string> = {
+  0: "clear_night",
+  1: "clear_night",
+  2: "partly_cloudy_night",
+};
+
+export function getWeatherInfo(code: number, isDay?: boolean): WeatherCodeInfo {
+  const base = WEATHER_CODES[code] ?? { label: "Unknown", icon: "unknown" };
+  if (isDay === false && NIGHT_ICON_OVERRIDES[code]) {
+    return { ...base, icon: NIGHT_ICON_OVERRIDES[code] };
+  }
+  return base;
 }
