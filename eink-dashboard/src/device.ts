@@ -2,6 +2,8 @@ import type { Env, CachedValue, DeviceData } from "./types";
 
 const DEVICE_ID = "20225290";
 const API_URL = `https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data/${DEVICE_ID}`;
+// SenseCraft's API-Key here is a public/shared platform key (not a private project secret).
+// See: README "SenseCraft API-Key Note" and DECISIONS.md section 17.
 const API_KEY = "sk_Qln1QHIPN1VmsT3u5Fazbt9fthL6ywfG";
 const CACHE_KEY = `device:${DEVICE_ID}:v1`;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes

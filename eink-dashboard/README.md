@@ -305,6 +305,19 @@ KV cache (24h)
 | `env.PHOTOS` | R2 Bucket | Birthday reference photos |
 | `env.APOD_API_KEY` | Secret | NASA APOD API key (optional, falls back to DEMO_KEY) |
 
+### SenseCraft API-Key Note
+
+`src/device.ts` uses the SenseCraft HMI `API-Key` header for the device data endpoint:
+`https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data/{DEVICE_ID}`.
+
+This key is treated as a **public/shared platform key** (not a private project secret). As of **February 16, 2026**, Seeed publishes the same key in official examples and notes it can be obtained from frontend source code:
+
+- https://wiki.seeedstudio.com/reTerminal_E1002_Sensecraft_AI_dashboard/#query-device-information-from-sensecraft-api
+
+Operationally, this means:
+- It is suitable for accessing non-sensitive SenseCraft device telemetry for this project.
+- It should not be treated as a strong authentication secret for sensitive data.
+
 ---
 
 ## SenseCraft HMI Setup (reTerminal E1001)

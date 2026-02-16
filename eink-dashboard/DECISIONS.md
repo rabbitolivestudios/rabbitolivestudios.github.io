@@ -505,6 +505,28 @@ The color moment pipeline (`/color/moment`) previously sent the LLM's scene-only
 | Floyd-Steinberg for Spectra 6 color | Used Floyd-Steinberg | Spectra 6 renders pixels exactly — no double-dithering issue; FS gives best 6-color results |
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
 | Server-side color page rendering as PNG | HTML with inline base64 PNG | SenseCraft screenshots HTML; HTML caption is crisper than bitmap font on indexed image |
+
+---
+
+## 17. SenseCraft API Key Handling
+
+### Decision: Keep SenseCraft `API-Key` in code, documented as public/shared
+
+For device telemetry (`src/device.ts`), the project uses the SenseCraft HMI API endpoint:
+`https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data/{DEVICE_ID}` with an `API-Key` header.
+
+We treat this key as a **public/shared platform key**, not a private credential. As of **February 16, 2026**, Seeed's official documentation publishes the same key and states it can be obtained from frontend source:
+
+- https://wiki.seeedstudio.com/reTerminal_E1002_Sensecraft_AI_dashboard/#query-device-information-from-sensecraft-api
+
+**Why this decision:**
+- Matches the upstream platform model and official examples
+- Avoids unnecessary secret plumbing for non-sensitive, single-device telemetry
+- Keeps deploy/setup simple for this personal dashboard project
+
+**Boundary:**
+- This policy applies only to this SenseCraft shared key pattern.
+- Real secrets (for example `APOD_API_KEY` and any private tokens) remain in Worker secrets and are never committed.
 | User-configurable location | Hardcoded per-device (Naperville E1001, Chicago E1002) | Single-user; E1001 at home (60540), E1002 at office (60606) |
 | Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
 | "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |
