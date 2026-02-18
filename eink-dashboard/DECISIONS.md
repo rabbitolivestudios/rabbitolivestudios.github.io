@@ -722,3 +722,33 @@ Escaped `date` field in `color-apod.ts` HTML interpolation (2 places). Already s
 ### DEMO_KEY warning
 
 Added `console.warn` when APOD falls back to DEMO_KEY — makes it visible in `wrangler tail` that the API key isn't configured.
+
+---
+
+## 26. Code Deduplication + Cron Parallelization (v3.9.0)
+
+### Dedup: What was shared vs kept separate
+
+**Shared (extracted to common modules):**
+- `pngToBase64()` → `src/png.ts` (was duplicated in index.ts, apod.ts, color-moment.ts)
+- `normalize()` + `normalizeForLocation()` → single `normalizeWeather()` in weather.ts (were 95% identical, differed only in location object)
+- `formatDate()`, `formatTime()`, `formatSunTime()`, `formatDailyPrecip()`, `getRainWarning()` → `src/weather-ui.ts` (were byte-for-byte identical between weather2.ts and color-weather.ts)
+- `icon()` → shared in `src/weather-ui.ts` but takes `icons` map as first param, so each page passes its own icon set
+
+**Kept separate (intentionally NOT shared):**
+- SVG icon sets (`ICONS` constant) — mono uses `#000` everywhere, color uses Spectra 6 palette colors. Different aesthetic per display.
+- `batteryIcon()` — mono fills with `#000`, color uses red/yellow/green based on level. The logic differs beyond just a color parameter.
+- `tempColor()` — only exists in color-weather.ts (mono has no color-coded temperatures)
+- `renderHTML()` — both weather pages have the same structure but differ in color accents, tempColor usage, and CSS (spectra6CSS). Not worth abstracting.
+
+**Pattern:** Each weather page creates a local `ic()` wrapper: `const ic = (key: string, size: number) => sharedIcon(ICONS, key, size)` — binds the page-specific icon set.
+
+### Cron parallelization
+
+**Every-6h block:** 5 independent fetches (headlines, 2 weather locations, 2 devices) wrapped in `Promise.allSettled()` with per-task failure logging. Previously sequential.
+
+**Daily block:** After shared dependencies (events + moment) resolve sequentially, all 5 image tasks (Pipeline A/birthday, Pipeline B, color moment, APOD, fact.json) run in parallel via `Promise.allSettled()`. Each task wraps its own try/catch for isolated error handling.
+
+**Why `allSettled` not `all`:** `Promise.all` short-circuits on first rejection. One failing pipeline (e.g. FLUX.2 timeout) would abort all other pending image generations. `allSettled` lets all tasks complete independently.
+
+**Expected improvement:** ~40% wall-clock reduction on daily cron — 3 image generation tasks (Pipeline A, B, color moment) now run concurrently instead of serially. Each takes ~10-30s; parallel execution bounded by the slowest instead of the sum.

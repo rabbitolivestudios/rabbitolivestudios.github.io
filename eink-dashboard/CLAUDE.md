@@ -277,11 +277,12 @@ eink-dashboard/
     fetch-timeout.ts      — fetchWithTimeout() utility (AbortController-based)
     validate.ts           — Input validation (parseMonth, parseDay, parseStyleIdx)
     response.ts           — htmlResponse() with security headers
+    weather-ui.ts         — Shared weather page helpers (formatDate, formatTime, icon, etc.)
     headlines.ts          — Steel/trade RSS + LLM summarizer
     apod.ts               — NASA APOD fetcher + Spectra 6 image processor
     spectra6.ts           — Spectra 6 palette constants + CSS variables
     dither-spectra6.ts    — Floyd-Steinberg dithering engine
-    png.ts                — Pure JS PNG encoder (8-bit, 1-bit, indexed)
+    png.ts                — Pure JS PNG encoder (8-bit, 1-bit, indexed) + pngToBase64()
     png-decode.ts         — PNG decoder (RGB, RGBA, Gray, GrayAlpha)
     font.ts               — 8x8 bitmap font (CP437)
     pages/

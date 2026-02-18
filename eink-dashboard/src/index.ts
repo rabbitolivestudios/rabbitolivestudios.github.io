@@ -19,7 +19,7 @@ import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 import { pngToBase64 } from "./png";
 
-const VERSION = "3.8.1";
+const VERSION = "3.9.0";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
