@@ -11,15 +11,16 @@ import type { Env } from "../types";
 import { getChicagoDateISO } from "../date-utils";
 import { getAPODData, getAPODColorImage } from "../apod";
 import { spectra6CSS } from "../spectra6";
+import { escapeHTML } from "../escape";
 
 function renderImageHTML(imageB64: string, title: string, copyright?: string, date?: string): string {
-  const copyrightText = copyright ? `&copy; ${copyright}` : "";
+  const copyrightText = copyright ? `&copy; ${escapeHTML(copyright)}` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=800">
-<title>APOD - ${title}</title>
+<title>APOD - ${escapeHTML(title)}</title>
 <style>
   :root { ${spectra6CSS()} }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -53,10 +54,10 @@ function renderImageHTML(imageB64: string, title: string, copyright?: string, da
 </head>
 <body>
   <div class="image-container">
-    <img src="data:image/png;base64,${imageB64}" alt="${title}">
+    <img src="data:image/png;base64,${imageB64}" alt="${escapeHTML(title)}">
   </div>
   <div class="caption">
-    <span class="caption-title">${title}</span>
+    <span class="caption-title">${escapeHTML(title)}</span>
     ${copyrightText ? `<span class="caption-copyright">${copyrightText}</span>` : ""}
     ${date ? `<span class="caption-date">${date}</span>` : ""}
   </div>
@@ -67,14 +68,14 @@ function renderImageHTML(imageB64: string, title: string, copyright?: string, da
 function renderTextFallback(title: string, explanation: string, date: string, copyright?: string): string {
   // Truncate explanation to fit 800x480
   const shortExplanation = explanation.length > 600 ? explanation.slice(0, 597) + "..." : explanation;
-  const copyrightText = copyright ? `Credit: ${copyright}` : "";
+  const copyrightText = copyright ? `Credit: ${escapeHTML(copyright)}` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=800">
-<title>APOD - ${title}</title>
+<title>APOD - ${escapeHTML(title)}</title>
 <style>
   :root { ${spectra6CSS()} }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -92,8 +93,8 @@ function renderTextFallback(title: string, explanation: string, date: string, co
 </head>
 <body>
   <div class="header">NASA ASTRONOMY PICTURE OF THE DAY | ${date}</div>
-  <div class="title">${title}</div>
-  <div class="explanation">${shortExplanation}</div>
+  <div class="title">${escapeHTML(title)}</div>
+  <div class="explanation">${escapeHTML(shortExplanation)}</div>
   ${copyrightText ? `<div class="credit">${copyrightText}</div>` : ""}
 </body>
 </html>`;

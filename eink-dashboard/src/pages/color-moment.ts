@@ -22,6 +22,7 @@ import { SPECTRA6_PALETTE } from "../spectra6";
 import { encodePNGIndexed } from "../png";
 import { spectra6CSS } from "../spectra6";
 import { WIDTH, HEIGHT } from "../image";
+import { escapeHTML } from "../escape";
 
 const ANTI_TEXT_SUFFIX = "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
@@ -178,14 +179,14 @@ function renderHTML(
   let captionHTML: string;
   if (birthdayInfo) {
     // Match E1001: "Happy Birthday!" left | "Name - age years" center | style right
-    captionHTML = `<span class="cap-left">Happy Birthday!</span><span class="cap-center">${birthdayInfo.name} - ${birthdayInfo.age} years</span><span class="cap-right">${birthdayInfo.styleName}</span>`;
+    captionHTML = `<span class="cap-left">Happy Birthday!</span><span class="cap-center">${escapeHTML(birthdayInfo.name)} - ${birthdayInfo.age} years</span><span class="cap-right">${escapeHTML(birthdayInfo.styleName)}</span>`;
   } else {
     const location = moment.location.length > 35
       ? moment.location.slice(0, 32) + "..."
       : moment.location;
     const title = moment.title || moment.scene.slice(0, 40);
     const dateLine = `${displayDate}, ${moment.year}`;
-    captionHTML = `<span class="cap-left">${location}</span><span class="cap-center">${title}</span><span class="cap-right">${dateLine}</span>`;
+    captionHTML = `<span class="cap-left">${escapeHTML(location)}</span><span class="cap-center">${escapeHTML(title)}</span><span class="cap-right">${dateLine}</span>`;
   }
 
   return `<!DOCTYPE html>

@@ -4,6 +4,7 @@ export interface Env {
   IMAGES: any;
   PHOTOS: R2Bucket;
   APOD_API_KEY?: string;
+  TEST_AUTH_KEY?: string;
 }
 
 // --- Moment Before types ---

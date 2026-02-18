@@ -16,7 +16,16 @@ import { getChicagoDateParts } from "./date-utils";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.6.1";
+const VERSION = "3.7.0";
+
+/** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
+function checkTestAuth(url: URL, env: Env): Response | null {
+  if (!env.TEST_AUTH_KEY) return null; // no secret configured → allow (local dev)
+  const key = url.searchParams.get("key");
+  if (key === env.TEST_AUTH_KEY) return null; // correct key → allow
+  // Wrong or missing key → 404 (hide endpoint existence)
+  return new Response("Not found", { status: 404 });
+}
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -335,6 +344,8 @@ export default {
         });
       }
       case "/test.png": {
+        const authBlock = checkTestAuth(url, env);
+        if (authBlock) return authBlock;
         // Test with a custom date: /test.png?m=10&d=20
         const m = url.searchParams.get("m") ?? "10";
         const d = url.searchParams.get("d") ?? "20";
@@ -356,6 +367,8 @@ export default {
         });
       }
       case "/test1.png": {
+        const authBlock1 = checkTestAuth(url, env);
+        if (authBlock1) return authBlock1;
         // Test 1-bit with a custom date: /test1.png?m=10&d=31&style=woodcut
         const m1 = url.searchParams.get("m") ?? "10";
         const d1 = url.searchParams.get("d") ?? "20";
@@ -382,6 +395,8 @@ export default {
         });
       }
       case "/test-birthday.png": {
+        const authBlockBday = checkTestAuth(url, env);
+        if (authBlockBday) return authBlockBday;
         // Test birthday portrait: /test-birthday.png?name=thiago&style=3
         const nameParam = url.searchParams.get("name") ?? "thiago";
         const person = getBirthdayByKey(nameParam);
@@ -408,10 +423,16 @@ export default {
         return handleColorWeatherPage(env, url);
       case "/color/moment":
         return handleColorMomentPage(env, url);
-      case "/color/test-moment":
+      case "/color/test-moment": {
+        const authBlockCM = checkTestAuth(url, env);
+        if (authBlockCM) return authBlockCM;
         return handleColorTestMoment(env, url);
-      case "/color/test-birthday":
+      }
+      case "/color/test-birthday": {
+        const authBlockCB = checkTestAuth(url, env);
+        if (authBlockCB) return authBlockCB;
         return handleColorTestBirthday(env, url);
+      }
       case "/color/apod":
         return handleColorAPODPage(env, url);
       case "/color/headlines":

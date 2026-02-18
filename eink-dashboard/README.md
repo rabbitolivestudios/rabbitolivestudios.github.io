@@ -26,9 +26,9 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /fact1.png` | 800x480 1-bit "Moment Before" illustration (6 rotating styles) | 24 hours |
 | `GET /fact.json` | "On This Day" historical event (JSON) | 24 hours |
 | `GET /fact-raw.jpg` | Raw AI-generated JPEG (before processing) | none |
-| `GET /test.png?m=MM&d=DD` | Generate 4-level image for any date (e.g. `?m=10&d=20`) | none |
-| `GET /test1.png?m=MM&d=DD&style=NAME` | Generate 1-bit image for any date + optional style override (e.g. `?m=7&d=4&style=woodcut`) | none |
-| `GET /test-birthday.png?name=KEY` | Generate birthday portrait for a person (e.g. `?name=thiago&style=3`) | none |
+| `GET /test.png?m=MM&d=DD&key=KEY` | Generate 4-level image for any date (requires `TEST_AUTH_KEY` in production) | none |
+| `GET /test1.png?m=MM&d=DD&style=NAME&key=KEY` | Generate 1-bit image for any date + optional style override (requires `TEST_AUTH_KEY`) | none |
+| `GET /test-birthday.png?name=KEY&key=KEY` | Generate birthday portrait for a person (requires `TEST_AUTH_KEY`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /weather?test-device` | Weather dashboard with fake device data (22°C, 45%, battery 73%) | none |
 | **E1002 Color Endpoints** | | |
@@ -36,7 +36,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
 | `GET /color/apod` | 800x480 color NASA APOD image (dithered to 6 colors) | 24 hours |
 | `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
-| `GET /color/test-moment?m=MM&d=DD&style=ID` | Generate color moment for any date + optional style override | none |
+| `GET /color/test-moment?m=MM&d=DD&style=ID&key=KEY` | Generate color moment for any date + optional style override (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
 | `GET /health` | Status check | none |
 
@@ -88,13 +88,15 @@ npx wrangler deploy
 
 Your worker URL will be printed. The cron runs daily at 06:05 UTC (images) and every 6 hours (headlines/weather).
 
-### Step 5: Set APOD API Key (Optional)
+### Step 5: Set Secrets (Optional)
 
 ```bash
 npx wrangler secret put APOD_API_KEY
+npx wrangler secret put TEST_AUTH_KEY
 ```
 
-Get a free key from [api.nasa.gov](https://api.nasa.gov). Falls back to `DEMO_KEY` (rate limited).
+- **APOD_API_KEY**: Get a free key from [api.nasa.gov](https://api.nasa.gov). Falls back to `DEMO_KEY` (rate limited).
+- **TEST_AUTH_KEY**: Protects expensive test endpoints (`/test.png`, `/test1.png`, `/test-birthday.png`, `/color/test-moment`, `/color/test-birthday`) from public abuse. When set, these routes require `?key=YOUR_KEY`. When not set (local dev), test routes work without auth.
 
 ### Step 5: Test
 
@@ -304,6 +306,7 @@ KV cache (24h)
 | `env.CACHE` | KV Namespace | Response caching (24h/6h) |
 | `env.PHOTOS` | R2 Bucket | Birthday reference photos |
 | `env.APOD_API_KEY` | Secret | NASA APOD API key (optional, falls back to DEMO_KEY) |
+| `env.TEST_AUTH_KEY` | Secret | Auth key for expensive test endpoints (optional, open in dev) |
 
 ### SenseCraft API-Key Note
 

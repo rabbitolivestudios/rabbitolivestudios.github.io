@@ -11,6 +11,7 @@ import type { Env, Headline } from "../types";
 import { getChicagoDateISO } from "../date-utils";
 import { getHeadlines, getCurrentPeriod } from "../headlines";
 import { spectra6CSS } from "../spectra6";
+import { escapeHTML } from "../escape";
 
 const CATEGORY_COLORS: Record<Headline["category"], string> = {
   tariffs: "var(--s6-red)",
@@ -88,10 +89,10 @@ function renderHTML(headlines: Headline[], dateStr: string): string {
       <div class="card">
         <div class="card-header">
           <span class="badge" style="background:${badgeColor};color:${badgeTextColor}">${badgeLabel}</span>
-          <span class="meta">${h.source}${ts ? ` | ${ts}` : ""}</span>
+          <span class="meta">${escapeHTML(h.source)}${ts ? ` | ${ts}` : ""}</span>
         </div>
-        <div class="card-title">${h.title}</div>
-        <div class="card-summary">${h.summary}</div>
+        <div class="card-title">${escapeHTML(h.title)}</div>
+        <div class="card-summary">${escapeHTML(h.summary)}</div>
       </div>`;
   }).join(`<div class="divider"></div>`);
 

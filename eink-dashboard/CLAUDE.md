@@ -66,17 +66,18 @@ npx wrangler dev --port 8790
 # Deploy to production
 npx wrangler deploy
 
-# Test endpoints (E1001)
+# Test endpoints (E1001) — no key needed in local dev
 curl http://localhost:8790/weather?test-device
 curl http://localhost:8790/weather?test-device&test-alert=tornado
 curl http://localhost:8790/fact.png
-curl http://localhost:8790/test.png?m=10&d=31
+curl "http://localhost:8790/test.png?m=10&d=31"
+# In production (TEST_AUTH_KEY set): curl "https://URL/test.png?m=10&d=31&key=YOUR_KEY"
 
 # Test endpoints (E1002 color)
 curl http://localhost:8790/color/weather?test-device
 curl http://localhost:8790/color/weather?test-device&test-alert=tornado
 curl http://localhost:8790/color/headlines?test-headlines
-curl http://localhost:8790/color/test-moment?m=7&d=20
+curl "http://localhost:8790/color/test-moment?m=7&d=20"
 curl http://localhost:8790/color/apod
 ```
 
@@ -266,6 +267,7 @@ eink-dashboard/
     image.ts              — Pipeline A (FLUX.2 4-level) + Pipeline B (SDXL 1-bit)
     birthday.ts           — Birthday data + detection
     birthday-image.ts     — Birthday portrait generation (FLUX.2 + R2 photos)
+    escape.ts             — HTML escaping utility (escapeHTML)
     png.ts                — Pure JS PNG encoder (8-bit + 1-bit)
     png-decode.ts         — PNG decoder (RGB, RGBA, Gray, GrayAlpha)
     font.ts               — 8x8 bitmap font (CP437)

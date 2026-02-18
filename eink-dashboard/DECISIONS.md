@@ -542,7 +542,27 @@ We treat this key as a **public/shared platform key**, not a private credential.
 
 ---
 
-## 18. Per-Device Telemetry (v3.6.1)
+## 18. Security Hardening (v3.7.0)
+
+### Decision: HTML escaping + test endpoint auth
+
+**HTML escaping:**
+- External content (LLM output, RSS feeds, NASA APOD, NWS alerts) was interpolated directly into HTML templates without escaping
+- Added `src/escape.ts` with `escapeHTML()` utility (escapes `& < > " '`)
+- Applied to all dynamic text interpolations across 5 page files: color-headlines, color-apod, color-moment, weather2, color-weather
+- Safe base64 image data and numeric values are NOT escaped (no XSS vector)
+
+**Test endpoint auth (`TEST_AUTH_KEY`):**
+- 5 expensive test routes (`/test.png`, `/test1.png`, `/test-birthday.png`, `/color/test-moment`, `/color/test-birthday`) trigger AI image generation — publicly accessible = abuse vector
+- Added optional `TEST_AUTH_KEY` secret: when set, these routes require `?key=SECRET` parameter
+- Returns 404 (not 401/403) when key is wrong — hides endpoint existence
+- When no secret is configured (local dev), all test routes work without auth
+- Cheap test params (`?test-device`, `?test-alert`, `?test-headlines`) remain open — no AI cost
+- Set after deploy: `npx wrangler secret put TEST_AUTH_KEY`
+
+---
+
+## 19. Per-Device Telemetry (v3.6.1)
 
 ### Decision: Parameterize `fetchDeviceData` with device ID
 
@@ -559,7 +579,7 @@ We treat this key as a **public/shared platform key**, not a private credential.
 
 ---
 
-## 19. Hourly Card Fallback (v3.6.1)
+## 20. Hourly Card Fallback (v3.6.1)
 
 ### Decision: Fall back to full hourly data when all future hours are past
 
@@ -572,7 +592,7 @@ Shows stale hours (still useful for temperature trends) rather than nothing.
 
 ---
 
-## 20. Color Weather Precipitation Text Readability (v3.6.1)
+## 21. Color Weather Precipitation Text Readability (v3.6.1)
 
 ### Decision: Remove blue text styling from precipitation in color-weather
 
@@ -588,7 +608,7 @@ Precipitation text (`X% rain`, `Xmm rain`, rain warnings) used `style="color:var
 
 ---
 
-## 21. Codex Environment Limitations (lesson learned)
+## 22. Codex Environment Limitations (lesson learned)
 
 ### Context: GitHub Codex attempted these fixes but could not deliver them
 

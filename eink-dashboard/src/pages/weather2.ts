@@ -1,6 +1,7 @@
 import type { Env, WeatherResponse, DailyEntry, DeviceData } from "../types";
 import { getWeather } from "../weather";
 import { fetchDeviceData, E1001_DEVICE_ID } from "../device";
+import { escapeHTML } from "../escape";
 
 // Inline SVG weather icons — black on transparent, designed for e-ink
 const ICONS: Record<string, string> = {
@@ -219,7 +220,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   // Alert / rain warning banner (between daily and hourly)
   let bannerHTML = "";
   if (w.alerts.length > 0) {
-    const names = w.alerts.map(a => a.event.toUpperCase()).join(", ");
+    const names = escapeHTML(w.alerts.map(a => a.event.toUpperCase()).join(", "));
     bannerHTML = `<div class="alert-banner">WARNING: ${names}</div>`;
   } else {
     const rainWarn = getRainWarning(w);
@@ -252,7 +253,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=800">
-<title>Weather - ${w.location.name}</title>
+<title>Weather - ${escapeHTML(w.location.name)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -333,7 +334,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 </head>
 <body>
   <div class="header">
-    <div class="location">${w.location.name.toUpperCase()}</div>
+    <div class="location">${escapeHTML(w.location.name.toUpperCase())}</div>
     ${device ? `<div class="header-center">${icon("house", 18)}<span>${device.indoor_temp_c}°C</span>${icon("droplet", 14)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
     <div class="header-right">
       <div class="datetime">${dateStr} | ${timeStr}</div>
