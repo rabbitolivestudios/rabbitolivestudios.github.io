@@ -87,7 +87,7 @@ id = "your-namespace-id-here"
 npx wrangler deploy
 ```
 
-Your worker URL will be printed. The cron runs daily at 06:05 UTC (images) and every 6 hours (headlines/weather).
+Your worker URL will be printed. The cron runs daily at 06:05 UTC (images) and every 6 hours (headlines/weather for both locations/device data).
 
 ### Step 5: Set Secrets (Optional)
 

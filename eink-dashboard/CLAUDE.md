@@ -179,7 +179,7 @@ Do not commit documentation updates until you have verified every file.
 - FLUX.2 requires multipart FormData, not JSON
 - KV cache dates use America/Chicago timezone
 - All external fetches must use `fetchWithTimeout()` from `src/fetch-timeout.ts`
-- All KV `.put()` calls must include `expirationTtl` (3600 for ephemeral, 604800 for daily)
+- All KV `.put()` calls must include `expirationTtl` (86400 for ephemeral, 604800 for daily) — see DECISIONS.md #24 for why ephemeral must be >>soft TTL
 
 ---
 

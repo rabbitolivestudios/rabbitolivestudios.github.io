@@ -647,21 +647,57 @@ Codex correctly identified all three bugs above and wrote correct code. However:
 
 ---
 
-## 24. Weather Hotfix: KV TTL + Error Handling (v3.8.1)
+## 24. Weather Crash Root Cause: KV TTL Regression (v3.8.1)
 
-### Problem: `/weather` returning Error 1101 in production
+### Incident: E1001 `/weather` returning Error 1101, then "Weather data temporarily unavailable"
 
-Open-Meteo started returning 429 (rate-limited). The v3.8.0 KV TTL of 3600s (1 hour) caused stale cache entries to expire before the next successful fetch. Without cached data, `getWeather()` threw an error — and `handleWeatherPageV2` had no try/catch, so the error propagated as Cloudflare Error 1101.
+After deploying v3.8.0 and v3.8.1, the E1001 weather page crashed. E1002's `/color/weather` continued working. Investigation revealed this was NOT rate-limiting — it was a **KV TTL regression** introduced in v3.8.0.
 
-### Fix (two parts):
+### Root cause: v3.8.0 introduced `expirationTtl: 3600` where there was none before
 
-1. **KV TTL 3600 → 86400** for weather, alerts, and device data. Weather is refreshed every 15 min, so stale data is at most 15 min old. A 24h TTL ensures stale fallback always has something to return even during extended API outages. This does NOT change the in-memory cache TTL (15 min for weather, 5 min for alerts/device) — only the KV expiration.
+| Version | KV `expirationTtl` | KV hard-deletes after | Stale fallback window |
+|---------|---------------------|----------------------|-----------------------|
+| **Pre-v3.8.0** | **None** (never expires) | **Never** | **Infinite** |
+| v3.8.0 | `3600` (1 hour) | 1 hour | ~45 min (weather) |
+| v3.8.1 | `86400` (24 hours) | 24 hours | ~23.75 hours |
 
-2. **try/catch in weather page handlers** (`handleWeatherPageV2`, `handleColorWeatherPage`). Returns a plain-text 503 with `Retry-After: 300` instead of crashing. Defense-in-depth for when KV is empty (new deployment, new namespace).
+**Before v3.8.0**, KV entries never expired. The code used a **two-tier cache** pattern:
+- **Soft TTL** (read-side): `Date.now() - cached.timestamp < CACHE_TTL_MS` (15 min for weather, 5 min for alerts/device). After this, re-fetch from API.
+- **Stale fallback**: If the API fetch fails, return stale cached data. Since KV entries never expired, stale data was always available.
 
-### Why not keep 1h TTL?
+**v3.8.0 added `expirationTtl: 3600`**, meaning Cloudflare KV itself hard-deleted entries after 1 hour. This destroyed the stale fallback:
+- 0–15 min: serve from cache (fresh)
+- 15–60 min: re-fetch from API. If API fails, stale fallback works (entry still in KV)
+- **After 60 min: KV entry is gone.** If the API also fails, `cached` is `null`, stale fallback has nothing to return, function throws.
 
-Open-Meteo is free and unauthenticated — rate limiting happens unpredictably. 1h was too aggressive for a stale fallback. 24h is safe because the display refreshes every 15 min anyway, so stale data is minimally stale.
+### Why E1001 died but E1002 survived
+
+This was a **timing coincidence**, not a code difference. Both caches had the same 1-hour TTL. E1001's `weather:60540:v2` was last written >1 hour before the API had a transient failure, so KV had already hard-deleted it. E1002's `weather:60606:v2` happened to be refreshed more recently by device polling.
+
+### Secondary finding: cron only warmed E1001 weather
+
+The cron handler called `getWeather(env)` (Naperville 60540) but never `getWeatherForLocation()` (Chicago 60606). E1002's weather cache relied entirely on device polling — no cron backup. If the device went offline for >24h, its weather cache would expire with no recovery path.
+
+### Fix (three parts):
+
+1. **KV TTL 3600 → 86400** for weather, alerts, and device data. The soft TTL (15 min for weather, 5 min for alerts/device) controls freshness; the KV TTL only controls how long stale fallback data survives. 24 hours gives ample margin for API outages.
+
+2. **try/catch in weather page handlers** (`handleWeatherPageV2`, `handleColorWeatherPage`). Returns a plain-text 503 with `Retry-After: 300` instead of crashing. Defense-in-depth for when KV is truly empty (new deployment, new namespace).
+
+3. **Cron now warms both weather locations.** Added `getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL")` to `handleScheduled()` so both E1001 and E1002 have cron backup.
+
+### Lesson: KV `expirationTtl` and soft TTL serve different purposes
+
+The soft TTL controls data **freshness** (when to re-fetch). The KV `expirationTtl` controls data **availability** (when the stale fallback disappears). Setting them close together (1h hard vs 15min soft = 45min margin) is dangerous. The hard TTL should be orders of magnitude larger than the soft TTL. Rule of thumb: `expirationTtl` should be at least 10× the soft TTL for ephemeral data.
+
+### Emergency KV seeding via Wrangler CLI
+
+When the KV cache is empty and the API is unreachable from the worker, you can seed it manually:
+```bash
+# Fetch data locally, normalize to KV format, then push:
+npx wrangler kv key put --namespace-id=NAMESPACE_ID "weather:60540:v2" --path /tmp/weather-kv.json --ttl 86400 --remote
+```
+Note: Wrangler v4 uses `--ttl` (not `--expiration-ttl`).
 
 ---
 
