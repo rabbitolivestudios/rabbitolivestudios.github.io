@@ -210,88 +210,108 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     const monthNum = parseInt(month);
     const dayNum = parseInt(day);
 
-    // --- Every-6h: headlines + weather + device (cheap, keeps data fresh) ---
+    // --- Every-6h: headlines + weather + device (parallel, independent) ---
     const period = getCurrentPeriod();
-    await getHeadlines(env, dateStr, period);
-    console.log(`Cron: warmed headlines for ${dateStr} period ${period}`);
-
-    await getWeather(env);
-    await getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL");
-    console.log("Cron: warmed weather cache (both locations)");
-
-    await fetchDeviceData(env, E1001_DEVICE_ID);
-    await fetchDeviceData(env, E1002_DEVICE_ID);
-    console.log("Cron: warmed device data cache (both devices)");
+    const sixHourResults = await Promise.allSettled([
+      getHeadlines(env, dateStr, period),
+      getWeather(env),
+      getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL"),
+      fetchDeviceData(env, E1001_DEVICE_ID),
+      fetchDeviceData(env, E1002_DEVICE_ID),
+    ]);
+    const labels = ["headlines", "weather-60540", "weather-60606", "device-E1001", "device-E1002"] as const;
+    for (let i = 0; i < sixHourResults.length; i++) {
+      if (sixHourResults[i].status === "rejected") {
+        console.error(`Cron: ${labels[i]} warm failed:`, (sixHourResults[i] as PromiseRejectedResult).reason);
+      }
+    }
+    console.log("Cron: warmed 6h data (headlines, weather, devices)");
 
     // --- Daily only: images + APOD ---
     if (!isDaily) return;
 
+    // Shared dependencies: events + moment (needed by all image pipelines)
     const { events, displayDate } = await getTodayEvents(env);
     console.log(`Cron: fetched ${events.length} events for ${dateStr}`);
 
-    // 1. Generate + cache shared moment (for all pipelines)
     const sharedMoment = await getOrGenerateMoment(env, events, dateStr);
     console.log(`Cron: shared moment — ${sharedMoment.year}, ${sharedMoment.location}`);
 
-    // 2. E1001 — Check for birthday → generate portrait for /fact.png
     const birthday = getBirthdayToday(monthNum, dayNum);
-    if (birthday) {
-      try {
-        console.log(`Cron: birthday detected — ${birthday.name}`);
-        const bdayPng = await generateBirthdayImage(env, birthday, yearNum);
-        await env.CACHE.put(`birthday:v1:${dateStr}`, pngToBase64(bdayPng), { expirationTtl: 604800 });
-        console.log(`Cron: cached birthday image for ${birthday.name} (${bdayPng.length} bytes)`);
-      } catch (err) {
-        console.error("Cron: birthday image failed, generating Moment Before instead:", err);
+
+    // Launch all independent image tasks in parallel
+    const tasks: Promise<void>[] = [];
+
+    // Pipeline A or birthday
+    tasks.push((async () => {
+      if (birthday) {
+        try {
+          console.log(`Cron: birthday detected — ${birthday.name}`);
+          const bdayPng = await generateBirthdayImage(env, birthday, yearNum);
+          await env.CACHE.put(`birthday:v1:${dateStr}`, pngToBase64(bdayPng), { expirationTtl: 604800 });
+          console.log(`Cron: cached birthday image for ${birthday.name}`);
+        } catch (err) {
+          console.error("Cron: birthday image failed, generating Moment Before instead:", err);
+          const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
+          await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
+          console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
+        }
+      } else {
         const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
         await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
-        console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
+        console.log(`Cron: cached 4-level image for ${dateStr}`);
       }
-    } else {
-      // 3. No birthday — regular 4-level grayscale image
-      const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
-      await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
-      console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
-    }
+    })());
 
-    // 4. E1001 — Always generate 1-bit image (not affected by birthdays)
-    const png1 = await generateMomentImage1Bit(env, sharedMoment, displayDate, dateStr);
-    await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1), { expirationTtl: 604800 });
-    console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
+    // Pipeline B (always runs, independent of birthday)
+    tasks.push((async () => {
+      const png1 = await generateMomentImage1Bit(env, sharedMoment, displayDate, dateStr);
+      await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1), { expirationTtl: 604800 });
+      console.log(`Cron: cached 1-bit image for ${dateStr}`);
+    })());
 
-    // 5. E1002 — Color moment (generate + cache directly)
+    // Color moment (skip on birthday)
     if (!birthday) {
-      try {
-        const colorStyle = getColorMomentStyle(dateStr);
-        const colorCacheKey = `color-moment:v2:${dateStr}:${colorStyle.id}`;
-        const existing = await env.CACHE.get(colorCacheKey);
-        if (!existing) {
-          const colorResult = await generateColorMoment(env, sharedMoment, dateStr);
-          const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-          const colorDisplayDate = `${months[monthNum - 1]} ${dayNum}`;
-          const cacheData = JSON.stringify({ imageB64: colorResult.base64, moment: sharedMoment, displayDate: colorDisplayDate });
-          await env.CACHE.put(colorCacheKey, cacheData, { expirationTtl: 604800 });
-          console.log(`Cron: cached color moment (${colorStyle.name}) for ${dateStr}`);
-        } else {
-          console.log(`Cron: color moment already cached for ${dateStr}`);
+      tasks.push((async () => {
+        try {
+          const colorStyle = getColorMomentStyle(dateStr);
+          const colorCacheKey = `color-moment:v2:${dateStr}:${colorStyle.id}`;
+          const existing = await env.CACHE.get(colorCacheKey);
+          if (!existing) {
+            const colorResult = await generateColorMoment(env, sharedMoment, dateStr);
+            const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+            const colorDisplayDate = `${months[monthNum - 1]} ${dayNum}`;
+            const cacheData = JSON.stringify({ imageB64: colorResult.base64, moment: sharedMoment, displayDate: colorDisplayDate });
+            await env.CACHE.put(colorCacheKey, cacheData, { expirationTtl: 604800 });
+            console.log(`Cron: cached color moment (${colorStyle.name}) for ${dateStr}`);
+          } else {
+            console.log(`Cron: color moment already cached for ${dateStr}`);
+          }
+        } catch (err) {
+          console.error("Cron: color moment warm failed:", err);
         }
+      })());
+    }
+
+    // APOD (independent)
+    tasks.push((async () => {
+      try {
+        await getAPODData(env, dateStr);
+        await getAPODColorImage(env, dateStr);
+        console.log("Cron: warmed APOD data + color image");
       } catch (err) {
-        console.error("Cron: color moment warm failed:", err);
+        console.error("Cron: APOD warm failed:", err);
       }
-    }
+    })());
 
-    // 6. E1002 — Color APOD
-    try {
-      await getAPODData(env, dateStr);
-      await getAPODColorImage(env, dateStr);
-      console.log("Cron: warmed APOD data + color image");
-    } catch (err) {
-      console.error("Cron: APOD warm failed:", err);
-    }
+    // fact.json (independent)
+    tasks.push((async () => {
+      await getFact(env);
+      console.log(`Cron: cached fact.json for ${dateStr}`);
+    })());
 
-    // 7. Cache fact.json for backward compatibility
-    await getFact(env);
-    console.log(`Cron: cached fact.json for ${dateStr}`);
+    await Promise.allSettled(tasks);
+    console.log("Cron: daily image warm complete");
   } catch (err) {
     console.error("Cron error:", err);
   }
