@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { getWeather } from "./weather";
+import { getWeather, getWeatherForLocation } from "./weather";
 import { getFact, getTodayEvents } from "./fact";
 import { generateMomentImage, generateMomentImage1Bit, generateMomentImageRaw } from "./image";
 import { generateMomentBefore, getOrGenerateMoment } from "./moment";
@@ -225,7 +225,8 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     console.log(`Cron: warmed headlines for ${dateStr} period ${period}`);
 
     await getWeather(env);
-    console.log("Cron: warmed weather cache");
+    await getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL");
+    console.log("Cron: warmed weather cache (both locations)");
 
     await fetchDeviceData(env, E1001_DEVICE_ID);
     await fetchDeviceData(env, E1002_DEVICE_ID);
