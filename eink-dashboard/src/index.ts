@@ -12,11 +12,12 @@ import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
+import { fetchWithTimeout } from "./fetch-timeout";
 import { getChicagoDateParts } from "./date-utils";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.7.0";
+const VERSION = "3.8.0";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -126,6 +127,7 @@ async function handleFactImage(env: Env): Promise<Response> {
     const bdayCacheKey = `birthday:v1:${dateStr}`;
     const cachedB64 = await env.CACHE.get(bdayCacheKey);
     if (cachedB64) {
+      console.log("birthday: cache hit");
       const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
       return new Response(binary, { headers: PNG_HEADERS });
     }
@@ -133,7 +135,7 @@ async function handleFactImage(env: Env): Promise<Response> {
     try {
       console.log(`Birthday detected: ${birthday.name} (${birthday.key})`);
       const png = await generateBirthdayImage(env, birthday, yearNum);
-      await env.CACHE.put(bdayCacheKey, pngToBase64(png));
+      await env.CACHE.put(bdayCacheKey, pngToBase64(png), { expirationTtl: 604800 });
       return new Response(png, { headers: PNG_HEADERS });
     } catch (err) {
       console.error("Birthday image failed, falling back to Moment Before:", err);
@@ -145,6 +147,7 @@ async function handleFactImage(env: Env): Promise<Response> {
   const cacheKey = `fact4:v4:${dateStr}`;
   const cachedB64 = await env.CACHE.get(cacheKey);
   if (cachedB64) {
+    console.log("fact.png: cache hit");
     const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
     return new Response(binary, { headers: PNG_HEADERS });
   }
@@ -153,7 +156,7 @@ async function handleFactImage(env: Env): Promise<Response> {
     const { events, displayDate } = await getTodayEvents(env);
     const moment = await generateMomentBefore(env, events);
     const png = await generateMomentImage(env, moment, displayDate, dateStr);
-    await env.CACHE.put(cacheKey, pngToBase64(png));
+    await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
     return new Response(png, { headers: PNG_HEADERS });
   } catch (err) {
     console.error("Moment Before image error:", err);
@@ -170,9 +173,10 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   const { dateStr } = getChicagoDateParts();
   const cacheKey = `fact1:v7:${dateStr}`;
 
-  const cachedB64 = await env.CACHE.get(cacheKey);
-  if (cachedB64) {
-    const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
+  const cachedB641 = await env.CACHE.get(cacheKey);
+  if (cachedB641) {
+    console.log("fact1.png: cache hit");
+    const binary = Uint8Array.from(atob(cachedB641), (c) => c.charCodeAt(0));
     return new Response(binary, { headers: PNG_HEADERS });
   }
 
@@ -180,7 +184,7 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
     const { events, displayDate } = await getTodayEvents(env);
     const moment = await generateMomentBefore(env, events);
     const png = await generateMomentImage1Bit(env, moment, displayDate, dateStr);
-    await env.CACHE.put(cacheKey, pngToBase64(png));
+    await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
     return new Response(png, { headers: PNG_HEADERS });
   } catch (err) {
     console.error("1-bit Moment Before image error:", err);
@@ -242,24 +246,24 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
       try {
         console.log(`Cron: birthday detected — ${birthday.name}`);
         const bdayPng = await generateBirthdayImage(env, birthday, yearNum);
-        await env.CACHE.put(`birthday:v1:${dateStr}`, pngToBase64(bdayPng));
+        await env.CACHE.put(`birthday:v1:${dateStr}`, pngToBase64(bdayPng), { expirationTtl: 604800 });
         console.log(`Cron: cached birthday image for ${birthday.name} (${bdayPng.length} bytes)`);
       } catch (err) {
         console.error("Cron: birthday image failed, generating Moment Before instead:", err);
         const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
-        await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
+        await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
         console.log(`Cron: cached fallback 4-level image for ${dateStr}`);
       }
     } else {
       // 3. No birthday — regular 4-level grayscale image
       const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
-      await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4));
+      await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
       console.log(`Cron: cached 4-level image for ${dateStr} (${png4.length} bytes)`);
     }
 
     // 4. E1001 — Always generate 1-bit image (not affected by birthdays)
     const png1 = await generateMomentImage1Bit(env, sharedMoment, displayDate, dateStr);
-    await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1));
+    await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1), { expirationTtl: 604800 });
     console.log(`Cron: cached 1-bit image for ${dateStr} (${png1.length} bytes)`);
 
     // 5. E1002 — Color moment (generate + cache directly)
@@ -273,7 +277,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
           const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
           const colorDisplayDate = `${months[monthNum - 1]} ${dayNum}`;
           const cacheData = JSON.stringify({ imageB64: colorResult.base64, moment: sharedMoment, displayDate: colorDisplayDate });
-          await env.CACHE.put(colorCacheKey, cacheData, { expirationTtl: 86400 });
+          await env.CACHE.put(colorCacheKey, cacheData, { expirationTtl: 604800 });
           console.log(`Cron: cached color moment (${colorStyle.name}) for ${dateStr}`);
         } else {
           console.log(`Cron: color moment already cached for ${dateStr}`);
@@ -350,7 +354,7 @@ export default {
         const m = url.searchParams.get("m") ?? "10";
         const d = url.searchParams.get("d") ?? "20";
         const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
-        const wikiRes = await fetch(wikiUrl, {
+        const wikiRes = await fetchWithTimeout(wikiUrl, {
           headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
         });
         const wikiData: any = await wikiRes.json();
@@ -374,7 +378,7 @@ export default {
         const d1 = url.searchParams.get("d") ?? "20";
         const forceStyle = url.searchParams.get("style") ?? undefined;
         const wikiUrl1 = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m1}/${d1}`;
-        const wikiRes1 = await fetch(wikiUrl1, {
+        const wikiRes1 = await fetchWithTimeout(wikiUrl1, {
           headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
         });
         const wikiData1: any = await wikiRes1.json();

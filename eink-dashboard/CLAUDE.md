@@ -268,6 +268,7 @@ eink-dashboard/
     birthday.ts           — Birthday data + detection
     birthday-image.ts     — Birthday portrait generation (FLUX.2 + R2 photos)
     escape.ts             — HTML escaping utility (escapeHTML)
+    fetch-timeout.ts      — fetchWithTimeout() utility (AbortController-based)
     png.ts                — Pure JS PNG encoder (8-bit + 1-bit)
     png-decode.ts         — PNG decoder (RGB, RGBA, Gray, GrayAlpha)
     font.ts               — 8x8 bitmap font (CP437)

@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, NWSAlert, CachedValue } from "./types";
 
 const LAT = 41.7508;
@@ -18,6 +19,7 @@ export async function fetchAlerts(env: Env): Promise<NWSAlert[]> {
   // Check cache
   const cached = await env.CACHE.get<CachedValue<NWSAlert[]>>(ALERTS_CACHE_KEY, "json");
   if (cached && Date.now() - cached.timestamp < ALERTS_CACHE_TTL_MS) {
+    console.log("Alerts 60540: cache hit");
     return cached.data;
   }
 
@@ -25,7 +27,7 @@ export async function fetchAlerts(env: Env): Promise<NWSAlert[]> {
   while (attempts < 2) {
     attempts++;
     try {
-      const res = await fetch(ALERTS_URL, {
+      const res = await fetchWithTimeout(ALERTS_URL, {
         headers: {
           "User-Agent": "(eink-dashboard, rabbitolivestudios@gmail.com)",
           Accept: "application/geo+json",
@@ -49,10 +51,10 @@ export async function fetchAlerts(env: Env): Promise<NWSAlert[]> {
           (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
       );
 
-      // Cache
       await env.CACHE.put(
         ALERTS_CACHE_KEY,
-        JSON.stringify({ data: alerts, timestamp: Date.now() })
+        JSON.stringify({ data: alerts, timestamp: Date.now() }),
+        { expirationTtl: 3600 },
       );
       return alerts;
     } catch (err) {
@@ -79,6 +81,7 @@ export async function fetchAlertsForLocation(
 ): Promise<NWSAlert[]> {
   const cached = await env.CACHE.get<CachedValue<NWSAlert[]>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < ALERTS_CACHE_TTL_MS) {
+    console.log(`Alerts ${cacheKey}: cache hit`);
     return cached.data;
   }
 
@@ -86,14 +89,14 @@ export async function fetchAlertsForLocation(
   while (attempts < 2) {
     attempts++;
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `https://api.weather.gov/alerts/active?point=${lat},${lon}`,
         {
           headers: {
             "User-Agent": "(eink-dashboard, rabbitolivestudios@gmail.com)",
             Accept: "application/geo+json",
           },
-        }
+        },
       );
       if (!res.ok) throw new Error(`NWS returned ${res.status}`);
       const data: any = await res.json();
@@ -108,7 +111,7 @@ export async function fetchAlertsForLocation(
         (a, b) =>
           (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
       );
-      await env.CACHE.put(cacheKey, JSON.stringify({ data: alerts, timestamp: Date.now() }));
+      await env.CACHE.put(cacheKey, JSON.stringify({ data: alerts, timestamp: Date.now() }), { expirationTtl: 3600 });
       return alerts;
     } catch (err) {
       if (attempts >= 2) console.error("NWS alerts error:", err);

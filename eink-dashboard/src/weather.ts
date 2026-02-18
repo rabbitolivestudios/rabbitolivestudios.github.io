@@ -1,5 +1,6 @@
 import { getWeatherInfo } from "./weather-codes";
 import { fetchAlerts, fetchAlertsForLocation } from "./alerts";
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, WeatherResponse, HourlyEntry, DailyEntry, CachedValue } from "./types";
 
 const LAT = 41.7508;
@@ -24,12 +25,13 @@ export async function getWeather(env: Env): Promise<WeatherResponse> {
   // Check cache
   const cached = await env.CACHE.get<CachedValue<WeatherResponse>>(CACHE_KEY, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log("Weather 60540: cache hit");
     return cached.data;
   }
 
   try {
     const [res, alerts] = await Promise.all([
-      fetch(OPEN_METEO_URL),
+      fetchWithTimeout(OPEN_METEO_URL),
       fetchAlerts(env),
     ]);
     if (!res.ok) {
@@ -39,11 +41,11 @@ export async function getWeather(env: Env): Promise<WeatherResponse> {
     const weather = normalize(raw, alerts);
 
     // Store in cache
-    await env.CACHE.put(CACHE_KEY, JSON.stringify({ data: weather, timestamp: Date.now() }));
+    await env.CACHE.put(CACHE_KEY, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 3600 });
     return weather;
   } catch (err) {
-    // Return stale cache if available
     if (cached) {
+      console.log("Weather 60540: using stale cache");
       return cached.data;
     }
     throw err;
@@ -158,6 +160,7 @@ export async function getWeatherForLocation(
 
   const cached = await env.CACHE.get<CachedValue<WeatherResponse>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log(`Weather ${zip}: cache hit`);
     return cached.data;
   }
 
@@ -174,17 +177,20 @@ export async function getWeatherForLocation(
       `&forecast_hours=24`;
 
     const [res, alerts] = await Promise.all([
-      fetch(url),
+      fetchWithTimeout(url),
       fetchAlertsForLocation(env, lat, lon, alertsCacheKey),
     ]);
     if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
     const raw: any = await res.json();
     const weather = normalizeForLocation(raw, alerts, lat, lon, zip, name);
 
-    await env.CACHE.put(cacheKey, JSON.stringify({ data: weather, timestamp: Date.now() }));
+    await env.CACHE.put(cacheKey, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 3600 });
     return weather;
   } catch (err) {
-    if (cached) return cached.data;
+    if (cached) {
+      console.log(`Weather ${zip}: using stale cache`);
+      return cached.data;
+    }
     throw err;
   }
 }

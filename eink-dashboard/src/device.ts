@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, CachedValue, DeviceData } from "./types";
 
 export const E1001_DEVICE_ID = "20225290"; // Home — Naperville 60540
@@ -18,6 +19,7 @@ export async function fetchDeviceData(
   // Check cache
   const cached = await env.CACHE.get<CachedValue<DeviceData>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log(`Device ${deviceId}: cache hit`);
     return cached.data;
   }
 
@@ -25,9 +27,9 @@ export async function fetchDeviceData(
   while (attempts < 2) {
     attempts++;
     try {
-      const res = await fetch(`${API_BASE}/${deviceId}`, {
+      const res = await fetchWithTimeout(`${API_BASE}/${deviceId}`, {
         headers: { "API-Key": API_KEY },
-      });
+      }, 8000);
       if (!res.ok) {
         throw new Error(`SenseCraft returned ${res.status}`);
       }
@@ -44,7 +46,8 @@ export async function fetchDeviceData(
 
       await env.CACHE.put(
         cacheKey,
-        JSON.stringify({ data, timestamp: Date.now() })
+        JSON.stringify({ data, timestamp: Date.now() }),
+        { expirationTtl: 3600 },
       );
       return data;
     } catch (err) {
@@ -54,7 +57,9 @@ export async function fetchDeviceData(
     }
   }
 
-  // Return stale cache or null
-  if (cached) return cached.data;
+  if (cached) {
+    console.log(`Device ${deviceId}: stale fallback`);
+    return cached.data;
+  }
   return null;
 }

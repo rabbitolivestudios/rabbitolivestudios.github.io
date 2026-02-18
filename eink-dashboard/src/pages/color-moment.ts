@@ -8,6 +8,7 @@
  * Test:  /color/test-moment?m=7&d=20
  */
 
+import { fetchWithTimeout } from "../fetch-timeout";
 import type { Env, MomentBeforeData } from "../types";
 import { getChicagoDateParts } from "../date-utils";
 import { getTodayEvents } from "../fact";
@@ -250,6 +251,7 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 
   const cached = await env.CACHE.get(cacheKey);
   if (cached) {
+    console.log(`color/moment: cache hit (${cacheKey})`);
     try {
       const data = JSON.parse(cached);
       const html = renderHTML(data.imageB64, data.moment, data.displayDate, data.birthdayInfo);
@@ -290,7 +292,7 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
 
   // Cache the result
   const cacheData = JSON.stringify({ imageB64, moment, displayDate, birthdayInfo });
-  await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 86400 });
+  await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 604800 });
 
   const html = renderHTML(imageB64, moment, displayDate, birthdayInfo);
   return new Response(html, {
@@ -304,7 +306,7 @@ export async function handleColorTestMoment(env: Env, url: URL): Promise<Respons
   const d = url.searchParams.get("d") ?? "20";
   const forceStyle = url.searchParams.get("style") ?? undefined;
   const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
-  const wikiRes = await fetch(wikiUrl, {
+  const wikiRes = await fetchWithTimeout(wikiUrl, {
     headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
   });
   const wikiData: any = await wikiRes.json();

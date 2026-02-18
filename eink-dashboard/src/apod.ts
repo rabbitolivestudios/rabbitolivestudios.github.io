@@ -5,6 +5,7 @@
  * API key stored as Cloudflare Worker secret (APOD_API_KEY).
  */
 
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, APODData, CachedValue } from "./types";
 import { decodePNG } from "./png-decode";
 import { centerCropRGB, resizeRGB } from "./image-color";
@@ -24,15 +25,16 @@ export async function getAPODData(env: Env, dateStr: string): Promise<APODData |
 
   const cached = await env.CACHE.get<CachedValue<APODData>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log("APOD: cache hit");
     return cached.data;
   }
 
   const apiKey = env.APOD_API_KEY || "DEMO_KEY";
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.nasa.gov/planetary/apod?api_key=${apiKey}&date=${dateStr}`,
-      { headers: { "User-Agent": "eink-dashboard/3.5 (Cloudflare Worker)" } }
+      { headers: { "User-Agent": "eink-dashboard/3.5 (Cloudflare Worker)" } },
     );
 
     if (!res.ok) {
@@ -52,7 +54,7 @@ export async function getAPODData(env: Env, dateStr: string): Promise<APODData |
       thumbnail_url: data.thumbnail_url,
     };
 
-    await env.CACHE.put(cacheKey, JSON.stringify({ data: apod, timestamp: Date.now() }));
+    await env.CACHE.put(cacheKey, JSON.stringify({ data: apod, timestamp: Date.now() }), { expirationTtl: 604800 });
     return apod;
   } catch (err) {
     console.error("APOD fetch error:", err);
@@ -78,7 +80,10 @@ export async function getAPODColorImage(env: Env, dateStr: string): Promise<stri
   const cacheKey = `apod-color:v1:${dateStr}`;
 
   const cached = await env.CACHE.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    console.log("APOD color: cache hit");
+    return cached;
+  }
 
   const apod = await getAPODData(env, dateStr);
   if (!apod || apod.media_type !== "image" || !apod.url) return null;
@@ -86,9 +91,9 @@ export async function getAPODColorImage(env: Env, dateStr: string): Promise<stri
   try {
     // Use HD URL if available, fall back to regular URL
     const imageUrl = apod.hdurl || apod.url;
-    const imgRes = await fetch(imageUrl, {
+    const imgRes = await fetchWithTimeout(imageUrl, {
       headers: { "User-Agent": "eink-dashboard/3.5 (Cloudflare Worker)" },
-    });
+    }, 15000);
     if (!imgRes.ok) throw new Error(`Image fetch returned ${imgRes.status}`);
 
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
@@ -113,7 +118,7 @@ export async function getAPODColorImage(env: Env, dateStr: string): Promise<stri
     const png = await encodePNGIndexed(indices, WIDTH, HEIGHT, SPECTRA6_PALETTE);
     const b64 = pngToBase64(png);
 
-    await env.CACHE.put(cacheKey, b64, { expirationTtl: 86400 });
+    await env.CACHE.put(cacheKey, b64, { expirationTtl: 604800 });
     return b64;
   } catch (err) {
     console.error("APOD color image error:", err);

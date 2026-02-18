@@ -5,6 +5,7 @@
  * deduplicates, and uses LLM to generate 2-line summaries.
  */
 
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, Headline, CachedValue } from "./types";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
@@ -131,18 +132,18 @@ async function fetchRawItems(): Promise<RawItem[]> {
 
   const fetches = [
     // Google News RSS for steel/trade/tariff
-    fetch(
+    fetchWithTimeout(
       "https://news.google.com/rss/search?q=steel+tariff+trade+section+232+USA&hl=en-US&gl=US",
-      { headers }
+      { headers },
     ).then(async r => {
       if (!r.ok) return [];
       return parseRSSItems(await r.text(), "Google News");
     }).catch(() => [] as RawItem[]),
 
     // Federal Register API
-    fetch(
+    fetchWithTimeout(
       "https://www.federalregister.gov/api/v1/documents.json?conditions[term]=steel+tariff&per_page=5&order=newest",
-      { headers }
+      { headers },
     ).then(async r => {
       if (!r.ok) return [];
       return parseFederalRegister(await r.json());
@@ -228,6 +229,7 @@ export async function getHeadlines(
 
   const cached = await env.CACHE.get<CachedValue<Headline[]>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log("Headlines: cache hit");
     return cached.data;
   }
 
@@ -241,7 +243,7 @@ export async function getHeadlines(
     }
 
     const headlines = await summarizeWithLLM(env, top5);
-    await env.CACHE.put(cacheKey, JSON.stringify({ data: headlines, timestamp: Date.now() }));
+    await env.CACHE.put(cacheKey, JSON.stringify({ data: headlines, timestamp: Date.now() }), { expirationTtl: 604800 });
     return headlines;
   } catch (err) {
     console.error("Headlines fetch error:", err);

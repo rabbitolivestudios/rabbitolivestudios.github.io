@@ -608,7 +608,32 @@ Precipitation text (`X% rain`, `Xmm rain`, rain warnings) used `style="color:var
 
 ---
 
-## 22. Codex Environment Limitations (lesson learned)
+## 22. Operational Reliability (v3.8.0)
+
+### Decision: Fetch timeouts, KV TTL, cache logging
+
+**Fetch timeouts (`fetchWithTimeout`):**
+- All external `fetch()` calls now use `fetchWithTimeout()` from `src/fetch-timeout.ts`
+- Uses `AbortController` + `setTimeout` — standard Web API pattern
+- Default timeout: 10s for most APIs; 8s for SenseCraft device API; 15s for APOD image download
+- On timeout, the `AbortError` propagates to existing try/catch blocks, which already handle errors via stale-cache fallback or graceful degradation
+- No behavior change for fast responses — only protects against hung connections
+
+**KV TTL policy:**
+- Ephemeral data (weather, alerts, device): `expirationTtl: 3600` (1 hour) — refreshed every 5-15 min, TTL is generous buffer
+- Daily data (images, facts, moments, APOD, headlines, birthdays): `expirationTtl: 604800` (7 days) — generous buffer for daily rotation
+- Previously most `.put()` calls had no TTL, so stale entries accumulated forever
+- APOD color and color-moment TTL increased from 86400 (1 day) to 604800 (7 days) for consistency
+
+**Cache hit/miss logging:**
+- Added `console.log("Component: cache hit")` at every cache-check-and-return-early point
+- Also logs stale fallback usage: `"Component: using stale cache"` / `"Component: stale fallback"`
+- Visible in `wrangler tail` for diagnosing cache behavior in production
+- No performance impact — just string interpolation on the hot path
+
+---
+
+## 23. Codex Environment Limitations (lesson learned)
 
 ### Context: GitHub Codex attempted these fixes but could not deliver them
 

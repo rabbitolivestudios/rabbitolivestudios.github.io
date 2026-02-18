@@ -184,10 +184,11 @@ export async function getOrGenerateMoment(
 
   const cached = await env.CACHE.get<CachedValue<MomentBeforeData>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < MOMENT_CACHE_TTL_MS) {
+    console.log("Moment: cache hit");
     return cached.data;
   }
 
   const moment = await generateMomentBefore(env, events);
-  await env.CACHE.put(cacheKey, JSON.stringify({ data: moment, timestamp: Date.now() }));
+  await env.CACHE.put(cacheKey, JSON.stringify({ data: moment, timestamp: Date.now() }), { expirationTtl: 604800 });
   return moment;
 }

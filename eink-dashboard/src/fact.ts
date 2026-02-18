@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, FactResponse, CachedValue } from "./types";
 import { getChicagoDateParts } from "./date-utils";
 
@@ -40,7 +41,7 @@ export async function getTodayEvents(env: Env): Promise<{
 
   try {
     const url = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${month}/${day}`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker; contact: rabbitolivestudios@gmail.com)" },
     });
 
@@ -66,12 +67,13 @@ export async function getFact(env: Env): Promise<FactResponse> {
   // Check cache
   const cached = await env.CACHE.get<CachedValue<FactResponse>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    console.log("Fact: cache hit");
     return cached.data;
   }
 
   try {
     const url = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${month}/${day}`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker; contact: rabbitolivestudios@gmail.com)" },
     });
 
@@ -89,7 +91,7 @@ export async function getFact(env: Env): Promise<FactResponse> {
     const selected = selectEvent(events);
     const fact = buildFact(dateStr, displayDate, selected);
 
-    await env.CACHE.put(cacheKey, JSON.stringify({ data: fact, timestamp: Date.now() }));
+    await env.CACHE.put(cacheKey, JSON.stringify({ data: fact, timestamp: Date.now() }), { expirationTtl: 604800 });
     return fact;
   } catch (err) {
     // Return stale cache if available
