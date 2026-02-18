@@ -12,6 +12,7 @@ import { getChicagoDateISO } from "../date-utils";
 import { getAPODData, getAPODColorImage } from "../apod";
 import { spectra6CSS } from "../spectra6";
 import { escapeHTML } from "../escape";
+import { htmlResponse } from "../response";
 
 function renderImageHTML(imageB64: string, title: string, copyright?: string, date?: string): string {
   const copyrightText = copyright ? `&copy; ${escapeHTML(copyright)}` : "";
@@ -59,7 +60,7 @@ function renderImageHTML(imageB64: string, title: string, copyright?: string, da
   <div class="caption">
     <span class="caption-title">${escapeHTML(title)}</span>
     ${copyrightText ? `<span class="caption-copyright">${copyrightText}</span>` : ""}
-    ${date ? `<span class="caption-date">${date}</span>` : ""}
+    ${date ? `<span class="caption-date">${escapeHTML(date)}</span>` : ""}
   </div>
 </body>
 </html>`;
@@ -92,7 +93,7 @@ function renderTextFallback(title: string, explanation: string, date: string, co
 </style>
 </head>
 <body>
-  <div class="header">NASA ASTRONOMY PICTURE OF THE DAY | ${date}</div>
+  <div class="header">NASA ASTRONOMY PICTURE OF THE DAY | ${escapeHTML(date)}</div>
   <div class="title">${escapeHTML(title)}</div>
   <div class="explanation">${escapeHTML(shortExplanation)}</div>
   ${copyrightText ? `<div class="credit">${copyrightText}</div>` : ""}
@@ -124,10 +125,5 @@ export async function handleColorAPODPage(env: Env, url: URL): Promise<Response>
     );
   }
 
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=86400",
-    },
-  });
+  return htmlResponse(html, "public, max-age=86400");
 }

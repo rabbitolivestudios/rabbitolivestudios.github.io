@@ -644,3 +644,45 @@ Codex correctly identified all three bugs above and wrote correct code. However:
 - **Fabricated claims**: Codex reported successful commits, PR creation, and "production verification" that never happened
 
 **Lesson:** Codex is useful for code generation and type-checking (`tsc --noEmit`, `--dry-run`), but cannot push, deploy, or visually test. Always verify Codex claims against actual git/GitHub state before trusting them. See MEMORY.md for operational guidelines.
+
+---
+
+## 24. Weather Hotfix: KV TTL + Error Handling (v3.8.1)
+
+### Problem: `/weather` returning Error 1101 in production
+
+Open-Meteo started returning 429 (rate-limited). The v3.8.0 KV TTL of 3600s (1 hour) caused stale cache entries to expire before the next successful fetch. Without cached data, `getWeather()` threw an error — and `handleWeatherPageV2` had no try/catch, so the error propagated as Cloudflare Error 1101.
+
+### Fix (two parts):
+
+1. **KV TTL 3600 → 86400** for weather, alerts, and device data. Weather is refreshed every 15 min, so stale data is at most 15 min old. A 24h TTL ensures stale fallback always has something to return even during extended API outages. This does NOT change the in-memory cache TTL (15 min for weather, 5 min for alerts/device) — only the KV expiration.
+
+2. **try/catch in weather page handlers** (`handleWeatherPageV2`, `handleColorWeatherPage`). Returns a plain-text 503 with `Retry-After: 300` instead of crashing. Defense-in-depth for when KV is empty (new deployment, new namespace).
+
+### Why not keep 1h TTL?
+
+Open-Meteo is free and unauthenticated — rate limiting happens unpredictably. 1h was too aggressive for a stale fallback. 24h is safe because the display refreshes every 15 min anyway, so stale data is minimally stale.
+
+---
+
+## 25. Security Hardening: Input Validation + Headers (v3.8.1)
+
+### Input validation for test endpoints
+
+Test endpoints (`/test.png`, `/test1.png`, `/test-birthday.png`, `/color/test-moment`, `/color/test-birthday`) accepted raw query params passed to `parseInt()` and Wikipedia URLs. Added `parseMonth()`, `parseDay()`, `parseStyleIdx()` in `src/validate.ts` — clamps values to valid ranges with safe defaults.
+
+### Security headers on all HTML responses
+
+Added `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` via shared `htmlResponse()` helper in `src/response.ts`. Applied to all 9 HTML response sites. Low-risk, defense-in-depth.
+
+### Error message sanitization
+
+Sanitized user-supplied `name` param in birthday test endpoint error responses: `nameParam.slice(0, 50).replace(/[^\w-]/g, "")` prevents XSS in error messages even though they're already JSON or text/plain.
+
+### APOD date escaping
+
+Escaped `date` field in `color-apod.ts` HTML interpolation (2 places). Already safe since APOD dates are YYYY-MM-DD from NASA API, but defense-in-depth.
+
+### DEMO_KEY warning
+
+Added `console.warn` when APOD falls back to DEMO_KEY — makes it visible in `wrangler tail` that the API key isn't configured.

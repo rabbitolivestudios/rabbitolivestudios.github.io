@@ -24,6 +24,8 @@ import { encodePNGIndexed } from "../png";
 import { spectra6CSS } from "../spectra6";
 import { WIDTH, HEIGHT } from "../image";
 import { escapeHTML } from "../escape";
+import { htmlResponse } from "../response";
+import { parseMonth, parseDay, parseStyleIdx } from "../validate";
 
 const ANTI_TEXT_SUFFIX = "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
@@ -255,9 +257,7 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
     try {
       const data = JSON.parse(cached);
       const html = renderHTML(data.imageB64, data.moment, data.displayDate, data.birthdayInfo);
-      return new Response(html, {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" },
-      });
+      return htmlResponse(html, "public, max-age=86400");
     } catch { /* cache corrupted, regenerate */ }
   }
 
@@ -295,15 +295,13 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
   await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 604800 });
 
   const html = renderHTML(imageB64, moment, displayDate, birthdayInfo);
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" },
-  });
+  return htmlResponse(html, "public, max-age=86400");
 }
 
 /** Test endpoint for color moment with custom date. */
 export async function handleColorTestMoment(env: Env, url: URL): Promise<Response> {
-  const m = url.searchParams.get("m") ?? "7";
-  const d = url.searchParams.get("d") ?? "20";
+  const m = parseMonth(url.searchParams.get("m") ?? "7");
+  const d = parseDay(url.searchParams.get("d") ?? "20");
   const forceStyle = url.searchParams.get("style") ?? undefined;
   const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
   const wikiRes = await fetchWithTimeout(wikiUrl, {
@@ -315,16 +313,14 @@ export async function handleColorTestMoment(env: Env, url: URL): Promise<Respons
     .map((e: any) => ({ year: e.year as number, text: e.text as string }));
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const displayDate = `${months[parseInt(m) - 1]} ${parseInt(d)}`;
-  const testDateStr = `2026-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  const displayDate = `${months[m - 1]} ${d}`;
+  const testDateStr = `2026-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
   const moment = await generateMomentBefore(env, testEvents);
   const result = await generateColorMoment(env, moment, testDateStr, forceStyle);
 
   const html = renderHTML(result.base64, moment, displayDate);
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  return htmlResponse(html, "no-store");
 }
 
 /** Test endpoint for color birthday portrait. */
@@ -332,10 +328,14 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
   const nameParam = url.searchParams.get("name") ?? "thiago";
   const person = getBirthdayByKey(nameParam);
   if (!person) {
-    return new Response(`Unknown person key: ${nameParam}`, { status: 400 });
+    const safeName = nameParam.slice(0, 50).replace(/[^\w-]/g, "");
+    return new Response(`Unknown person key: ${safeName}`, {
+      status: 400,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
   }
   const styleParam = url.searchParams.get("style");
-  const styleIdx = styleParam !== null ? parseInt(styleParam) : undefined;
+  const styleIdx = parseStyleIdx(styleParam);
   const currentYear = new Date().getFullYear();
 
   try {
@@ -345,9 +345,7 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
     const moment: MomentBeforeData = { year: currentYear, location: "", title: person.name, scene: "", imagePrompt: "" };
     const birthdayInfo: BirthdayCaptionInfo = { name: person.name, age, styleName: style.name };
     const html = renderHTML(imageB64, moment, "Birthday", birthdayInfo);
-    return new Response(html, {
-      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-    });
+    return htmlResponse(html, "no-store");
   } catch (err) {
     console.error("Color test birthday error:", err);
     return new Response("Failed to generate color birthday image", { status: 503 });

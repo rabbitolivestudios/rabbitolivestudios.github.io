@@ -397,32 +397,43 @@ const TEST_ALERTS: Record<string, NWSAlert[]> = {
 };
 
 export async function handleColorWeatherPage(env: Env, url: URL): Promise<Response> {
-  const [weather, device] = await Promise.all([
-    getWeatherForLocation(env, OFFICE_LAT, OFFICE_LON, OFFICE_ZIP, OFFICE_NAME),
-    fetchDeviceData(env, E1002_DEVICE_ID),
-  ]);
+  try {
+    const [weather, device] = await Promise.all([
+      getWeatherForLocation(env, OFFICE_LAT, OFFICE_LON, OFFICE_ZIP, OFFICE_NAME),
+      fetchDeviceData(env, E1002_DEVICE_ID),
+    ]);
 
-  const testAlert = url.searchParams.get("test-alert");
-  if (testAlert && TEST_ALERTS[testAlert]) {
-    weather.alerts = TEST_ALERTS[testAlert];
-  }
-  if (url.searchParams.has("test-rain")) {
-    weather.precip_next_2h = [0, 0, 0.2, 0.5, 0.8, 0.3, 0, 0];
-  }
-  const testTemp = url.searchParams.get("test-temp");
-  if (testTemp !== null) {
-    weather.current.temp_c = parseInt(testTemp, 10);
-  }
-  const testDevice: DeviceData | null = url.searchParams.has("test-device")
-    ? { battery_level: 73, battery_charging: false, indoor_temp_c: 22, indoor_humidity_pct: 45 }
-    : device;
+    const testAlert = url.searchParams.get("test-alert");
+    if (testAlert && TEST_ALERTS[testAlert]) {
+      weather.alerts = TEST_ALERTS[testAlert];
+    }
+    if (url.searchParams.has("test-rain")) {
+      weather.precip_next_2h = [0, 0, 0.2, 0.5, 0.8, 0.3, 0, 0];
+    }
+    const testTemp = url.searchParams.get("test-temp");
+    if (testTemp !== null) {
+      weather.current.temp_c = parseInt(testTemp, 10);
+    }
+    const testDevice: DeviceData | null = url.searchParams.has("test-device")
+      ? { battery_level: 73, battery_charging: false, indoor_temp_c: 22, indoor_humidity_pct: 45 }
+      : device;
 
-  const html = renderHTML(weather, testDevice);
+    const html = renderHTML(weather, testDevice);
 
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=1800",
-    },
-  });
+    return new Response(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "public, max-age=1800",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  } catch (err) {
+    console.error("Color weather page error:", err);
+    return new Response("Weather data temporarily unavailable", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "300" },
+    });
+  }
 }

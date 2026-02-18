@@ -54,7 +54,7 @@ export async function fetchAlerts(env: Env): Promise<NWSAlert[]> {
       await env.CACHE.put(
         ALERTS_CACHE_KEY,
         JSON.stringify({ data: alerts, timestamp: Date.now() }),
-        { expirationTtl: 3600 },
+        { expirationTtl: 86400 },
       );
       return alerts;
     } catch (err) {
@@ -111,7 +111,7 @@ export async function fetchAlertsForLocation(
         (a, b) =>
           (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
       );
-      await env.CACHE.put(cacheKey, JSON.stringify({ data: alerts, timestamp: Date.now() }), { expirationTtl: 3600 });
+      await env.CACHE.put(cacheKey, JSON.stringify({ data: alerts, timestamp: Date.now() }), { expirationTtl: 86400 });
       return alerts;
     } catch (err) {
       if (attempts >= 2) console.error("NWS alerts error:", err);

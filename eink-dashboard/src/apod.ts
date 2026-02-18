@@ -30,6 +30,9 @@ export async function getAPODData(env: Env, dateStr: string): Promise<APODData |
   }
 
   const apiKey = env.APOD_API_KEY || "DEMO_KEY";
+  if (!env.APOD_API_KEY) {
+    console.warn("APOD: no API key configured, using DEMO_KEY (rate-limited)");
+  }
 
   try {
     const res = await fetchWithTimeout(

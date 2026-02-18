@@ -1,3 +1,5 @@
+import { htmlResponse } from "../response";
+
 export function handleFactPage(): Response {
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -16,10 +18,5 @@ img { display: block; width: 100vw; height: 100vh; object-fit: cover; }
 </body>
 </html>`;
 
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=86400",
-    },
-  });
+  return htmlResponse(html, "public, max-age=86400");
 }

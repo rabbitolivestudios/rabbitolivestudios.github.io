@@ -47,7 +47,7 @@ export async function fetchDeviceData(
       await env.CACHE.put(
         cacheKey,
         JSON.stringify({ data, timestamp: Date.now() }),
-        { expirationTtl: 3600 },
+        { expirationTtl: 86400 },
       );
       return data;
     } catch (err) {

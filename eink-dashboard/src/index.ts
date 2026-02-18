@@ -14,10 +14,11 @@ import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { getChicagoDateParts } from "./date-utils";
+import { parseMonth, parseDay, parseStyleIdx } from "./validate";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.8.0";
+const VERSION = "3.8.1";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -351,8 +352,8 @@ export default {
         const authBlock = checkTestAuth(url, env);
         if (authBlock) return authBlock;
         // Test with a custom date: /test.png?m=10&d=20
-        const m = url.searchParams.get("m") ?? "10";
-        const d = url.searchParams.get("d") ?? "20";
+        const m = parseMonth(url.searchParams.get("m") ?? "10");
+        const d = parseDay(url.searchParams.get("d") ?? "20");
         const wikiUrl = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m}/${d}`;
         const wikiRes = await fetchWithTimeout(wikiUrl, {
           headers: { "User-Agent": "eink-dashboard/1.0 (Cloudflare Worker)" },
@@ -362,8 +363,8 @@ export default {
           .filter((e: any) => e.year && e.text)
           .map((e: any) => ({ year: e.year as number, text: e.text as string }));
         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const displayDate = `${months[parseInt(m) - 1]} ${parseInt(d)}`;
-        const testDateStr = `2026-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+        const displayDate = `${months[m - 1]} ${d}`;
+        const testDateStr = `2026-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
         const moment = await generateMomentBefore(env, testEvents);
         const png = await generateMomentImage(env, moment, displayDate, testDateStr);
         return new Response(png, {
@@ -374,8 +375,8 @@ export default {
         const authBlock1 = checkTestAuth(url, env);
         if (authBlock1) return authBlock1;
         // Test 1-bit with a custom date: /test1.png?m=10&d=31&style=woodcut
-        const m1 = url.searchParams.get("m") ?? "10";
-        const d1 = url.searchParams.get("d") ?? "20";
+        const m1 = parseMonth(url.searchParams.get("m") ?? "10");
+        const d1 = parseDay(url.searchParams.get("d") ?? "20");
         const forceStyle = url.searchParams.get("style") ?? undefined;
         const wikiUrl1 = `https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${m1}/${d1}`;
         const wikiRes1 = await fetchWithTimeout(wikiUrl1, {
@@ -386,8 +387,8 @@ export default {
           .filter((e: any) => e.year && e.text)
           .map((e: any) => ({ year: e.year as number, text: e.text as string }));
         const months1 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const displayDate1 = `${months1[parseInt(m1) - 1]} ${parseInt(d1)}`;
-        const testDateStr = `2026-${m1.padStart(2, "0")}-${d1.padStart(2, "0")}`;
+        const displayDate1 = `${months1[m1 - 1]} ${d1}`;
+        const testDateStr = `2026-${String(m1).padStart(2, "0")}-${String(d1).padStart(2, "0")}`;
         const moment1 = await generateMomentBefore(env, testEvents1);
         const png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr, forceStyle);
         return new Response(png1, {
@@ -405,10 +406,11 @@ export default {
         const nameParam = url.searchParams.get("name") ?? "thiago";
         const person = getBirthdayByKey(nameParam);
         if (!person) {
-          return errorResponse(`Unknown person key: ${nameParam}`, 400);
+          const safeName = nameParam.slice(0, 50).replace(/[^\w-]/g, "");
+          return errorResponse(`Unknown person key: ${safeName}`, 400);
         }
         const styleParam = url.searchParams.get("style");
-        const styleIdx = styleParam !== null ? parseInt(styleParam) : undefined;
+        const styleIdx = parseStyleIdx(styleParam);
         try {
           const png = await generateBirthdayImage(env, person, new Date().getFullYear(), styleIdx);
           return new Response(png, {

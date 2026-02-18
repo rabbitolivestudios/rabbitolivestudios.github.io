@@ -12,6 +12,7 @@ import { getChicagoDateISO } from "../date-utils";
 import { getHeadlines, getCurrentPeriod } from "../headlines";
 import { spectra6CSS } from "../spectra6";
 import { escapeHTML } from "../escape";
+import { htmlResponse } from "../response";
 
 const CATEGORY_COLORS: Record<Headline["category"], string> = {
   tariffs: "var(--s6-red)",
@@ -171,10 +172,5 @@ export async function handleColorHeadlinesPage(env: Env, url: URL): Promise<Resp
 
   const html = renderHTML(headlines, dateStr);
 
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=21600",
-    },
-  });
+  return htmlResponse(html, "public, max-age=21600");
 }

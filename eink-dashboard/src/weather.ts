@@ -41,7 +41,7 @@ export async function getWeather(env: Env): Promise<WeatherResponse> {
     const weather = normalize(raw, alerts);
 
     // Store in cache
-    await env.CACHE.put(CACHE_KEY, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 3600 });
+    await env.CACHE.put(CACHE_KEY, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 86400 });
     return weather;
   } catch (err) {
     if (cached) {
@@ -184,7 +184,7 @@ export async function getWeatherForLocation(
     const raw: any = await res.json();
     const weather = normalizeForLocation(raw, alerts, lat, lon, zip, name);
 
-    await env.CACHE.put(cacheKey, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 3600 });
+    await env.CACHE.put(cacheKey, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 86400 });
     return weather;
   } catch (err) {
     if (cached) {

@@ -275,6 +275,8 @@ eink-dashboard/
     birthday-image.ts     — Birthday portrait generation (FLUX.2 + R2 photos)
     escape.ts             — HTML escaping utility (escapeHTML)
     fetch-timeout.ts      — fetchWithTimeout() utility (AbortController-based)
+    validate.ts           — Input validation (parseMonth, parseDay, parseStyleIdx)
+    response.ts           — htmlResponse() with security headers
     headlines.ts          — Steel/trade RSS + LLM summarizer
     apod.ts               — NASA APOD fetcher + Spectra 6 image processor
     spectra6.ts           — Spectra 6 palette constants + CSS variables
