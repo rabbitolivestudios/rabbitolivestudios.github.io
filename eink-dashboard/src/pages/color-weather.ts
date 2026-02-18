@@ -10,7 +10,7 @@
 
 import type { Env, WeatherResponse, DailyEntry, DeviceData, NWSAlert } from "../types";
 import { getWeatherForLocation } from "../weather";
-import { fetchDeviceData } from "../device";
+import { fetchDeviceData, E1002_DEVICE_ID } from "../device";
 import { spectra6CSS } from "../spectra6";
 
 // E1002 is at the office — Chicago Loop (60606)
@@ -228,7 +228,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
         <div class="day-name">${formatDate(d.date)}</div>
         <div class="day-icon">${icon(d.icon, 38)}</div>
         <div class="day-temps"><span style="color:${highColor}">${d.high_c}°</span> / <span style="color:${lowColor}">${d.low_c}°</span></div>
-        ${precipStr ? `<div class="day-precip" style="color:var(--s6-blue)">${precipStr}</div>` : '<div class="day-precip"></div>'}
+        ${precipStr ? `<div class="day-precip">${precipStr}</div>` : '<div class="day-precip"></div>'}
       </div>`;
   }).join("");
 
@@ -243,7 +243,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   } else {
     const rainWarn = getRainWarning(w);
     if (rainWarn) {
-      bannerHTML = `<div class="rain-warning" style="color:var(--s6-blue)">${icon("droplet", 18)} ${rainWarn}</div>`;
+      bannerHTML = `<div class="rain-warning">${icon("droplet", 18)} ${rainWarn}</div>`;
     }
   }
 
@@ -257,14 +257,15 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   const pv = (t: string) => p.find(x => x.type === t)!.value;
   const nowISO = `${pv("year")}-${pv("month")}-${pv("day")}T${pv("hour")}:${pv("minute")}`;
   const futureHours = w.hourly_12h.filter(h => h.time >= nowISO);
-  const hourlyHTML = futureHours.slice(0, 6).map(h => {
+  const hourlyCards = futureHours.length > 0 ? futureHours : w.hourly_12h;
+  const hourlyHTML = hourlyCards.slice(0, 6).map(h => {
     const hColor = tempColor(h.temp_c);
     return `
       <div class="hour">
         <div class="hour-time">${formatTime(h.time)}</div>
         <div class="hour-icon">${icon(h.icon, 28)}</div>
         <div class="hour-temp" style="color:${hColor}">${h.temp_c}°</div>
-        ${h.precip_prob_pct > 0 ? `<div class="hour-precip" style="color:var(--s6-blue)">${h.precip_prob_pct}% rain</div>` : '<div class="hour-precip"></div>'}
+        ${h.precip_prob_pct > 0 ? `<div class="hour-precip">${h.precip_prob_pct}% rain</div>` : '<div class="hour-precip"></div>'}
       </div>`;
   }).join("");
 
@@ -397,7 +398,7 @@ const TEST_ALERTS: Record<string, NWSAlert[]> = {
 export async function handleColorWeatherPage(env: Env, url: URL): Promise<Response> {
   const [weather, device] = await Promise.all([
     getWeatherForLocation(env, OFFICE_LAT, OFFICE_LON, OFFICE_ZIP, OFFICE_NAME),
-    fetchDeviceData(env),
+    fetchDeviceData(env, E1002_DEVICE_ID),
   ]);
 
   const testAlert = url.searchParams.get("test-alert");

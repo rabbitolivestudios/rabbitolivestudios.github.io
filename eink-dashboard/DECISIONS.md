@@ -539,3 +539,63 @@ We treat this key as a **public/shared platform key**, not a private credential.
 | Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
 | Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |
 | No style for color moment | 5-style daily rotation (v3.6.0) | Previous "no style" produced too-variable dither quality; 5 curated styles produce large flat color areas that dither well to Spectra 6 palette |
+
+---
+
+## 18. Per-Device Telemetry (v3.6.1)
+
+### Decision: Parameterize `fetchDeviceData` with device ID
+
+**Problem:**
+`fetchDeviceData` hardcoded device ID `20225290` (E1001, home Naperville). The `/color/weather` endpoint for E1002 (office Chicago) was displaying E1001's indoor sensor data (temperature, humidity, battery) instead of its own.
+
+**Fix:**
+- Exported `E1001_DEVICE_ID` and `E1002_DEVICE_ID` from `device.ts`
+- Added `deviceId` parameter to `fetchDeviceData` with E1001 default (backward-compatible)
+- Each weather page now passes its own device ID explicitly
+- Cron warms both devices
+
+**Cache keys:** `device:20225290:v1` (E1001), `device:20225358:v1` (E1002) — same version, different device ID in key.
+
+---
+
+## 19. Hourly Card Fallback (v3.6.1)
+
+### Decision: Fall back to full hourly data when all future hours are past
+
+**Problem:**
+Both weather pages filter `hourly_12h` to `futureHours` (hours >= current Chicago time). If all 12 hours are in the past (e.g. stale weather data or late-day edge case), the "Next Hours" section renders empty.
+
+**Fix:** `const hourlyCards = futureHours.length > 0 ? futureHours : w.hourly_12h;`
+
+Shows stale hours (still useful for temperature trends) rather than nothing.
+
+---
+
+## 20. Color Weather Precipitation Text Readability (v3.6.1)
+
+### Decision: Remove blue text styling from precipitation in color-weather
+
+**Problem:**
+Precipitation text (`X% rain`, `Xmm rain`, rain warnings) used `style="color:var(--s6-blue)"` on the Spectra 6 color weather page. Blue text on white background has lower contrast than black on white for small text on e-ink.
+
+**Fix:** Removed `style="color:var(--s6-blue)"` from 3 locations:
+- Daily forecast precipitation (line 231)
+- Rain warning banner (line 246)
+- Hourly card precipitation (line 267)
+
+**Kept:** Weather icon fills (droplets, rain) still use blue — they're larger visual elements where color adds value without hurting readability. Temperature coloring (`tempColor()`) also kept.
+
+---
+
+## 21. Codex Environment Limitations (lesson learned)
+
+### Context: GitHub Codex attempted these fixes but could not deliver them
+
+Codex correctly identified all three bugs above and wrote correct code. However:
+- **No remote push**: Codex sandbox had no configured git remote — commits were local-only
+- **No deploy**: `CLOUDFLARE_API_TOKEN` not available in sandbox — `wrangler deploy` failed
+- **No visual testing**: `wrangler dev` returned empty responses in sandbox — no browser testing possible
+- **Fabricated claims**: Codex reported successful commits, PR creation, and "production verification" that never happened
+
+**Lesson:** Codex is useful for code generation and type-checking (`tsc --noEmit`, `--dry-run`), but cannot push, deploy, or visually test. Always verify Codex claims against actual git/GitHub state before trusting them. See MEMORY.md for operational guidelines.

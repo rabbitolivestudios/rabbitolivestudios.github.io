@@ -310,6 +310,8 @@ KV cache (24h)
 `src/device.ts` uses the SenseCraft HMI `API-Key` header for the device data endpoint:
 `https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data/{DEVICE_ID}`.
 
+**Device IDs:** E1001 = `20225290` (home, Naperville), E1002 = `20225358` (office, Chicago). Each weather page passes its own device ID so telemetry (battery, indoor temp/humidity) matches the physical device.
+
 This key is treated as a **public/shared platform key** (not a private project secret). As of **February 16, 2026**, Seeed publishes the same key in official examples and notes it can be obtained from frontend source code:
 
 - https://wiki.seeedstudio.com/reTerminal_E1002_Sensecraft_AI_dashboard/#query-device-information-from-sensecraft-api

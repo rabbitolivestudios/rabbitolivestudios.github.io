@@ -1,16 +1,22 @@
 import type { Env, CachedValue, DeviceData } from "./types";
 
-const DEVICE_ID = "20225290";
-const API_URL = `https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data/${DEVICE_ID}`;
+export const E1001_DEVICE_ID = "20225290"; // Home — Naperville 60540
+export const E1002_DEVICE_ID = "20225358"; // Office — Chicago 60606
+
+const API_BASE = "https://sensecraft-hmi-api.seeed.cc/api/v1/user/device/iot_data";
 // SenseCraft's API-Key here is a public/shared platform key (not a private project secret).
 // See: README "SenseCraft API-Key Note" and DECISIONS.md section 17.
 const API_KEY = "sk_Qln1QHIPN1VmsT3u5Fazbt9fthL6ywfG";
-const CACHE_KEY = `device:${DEVICE_ID}:v1`;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export async function fetchDeviceData(env: Env): Promise<DeviceData | null> {
+export async function fetchDeviceData(
+  env: Env,
+  deviceId: string = E1001_DEVICE_ID,
+): Promise<DeviceData | null> {
+  const cacheKey = `device:${deviceId}:v1`;
+
   // Check cache
-  const cached = await env.CACHE.get<CachedValue<DeviceData>>(CACHE_KEY, "json");
+  const cached = await env.CACHE.get<CachedValue<DeviceData>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.data;
   }
@@ -19,7 +25,7 @@ export async function fetchDeviceData(env: Env): Promise<DeviceData | null> {
   while (attempts < 2) {
     attempts++;
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(`${API_BASE}/${deviceId}`, {
         headers: { "API-Key": API_KEY },
       });
       if (!res.ok) {
@@ -37,7 +43,7 @@ export async function fetchDeviceData(env: Env): Promise<DeviceData | null> {
       };
 
       await env.CACHE.put(
-        CACHE_KEY,
+        cacheKey,
         JSON.stringify({ data, timestamp: Date.now() })
       );
       return data;

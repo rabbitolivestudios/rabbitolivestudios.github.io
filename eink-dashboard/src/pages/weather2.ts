@@ -1,6 +1,6 @@
 import type { Env, WeatherResponse, DailyEntry, DeviceData } from "../types";
 import { getWeather } from "../weather";
-import { fetchDeviceData } from "../device";
+import { fetchDeviceData, E1001_DEVICE_ID } from "../device";
 
 // Inline SVG weather icons — black on transparent, designed for e-ink
 const ICONS: Record<string, string> = {
@@ -238,7 +238,8 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   const pv = (t: string) => p.find(x => x.type === t)!.value;
   const nowISO = `${pv("year")}-${pv("month")}-${pv("day")}T${pv("hour")}:${pv("minute")}`;
   const futureHours = w.hourly_12h.filter(h => h.time >= nowISO);
-  const hourlyHTML = futureHours.slice(0, 6).map(h => `
+  const hourlyCards = futureHours.length > 0 ? futureHours : w.hourly_12h;
+  const hourlyHTML = hourlyCards.slice(0, 6).map(h => `
       <div class="hour">
         <div class="hour-time">${formatTime(h.time)}</div>
         <div class="hour-icon">${icon(h.icon, 28)}</div>
@@ -383,7 +384,7 @@ const TEST_ALERTS: Record<string, import("../types").NWSAlert[]> = {
 export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response> {
   const [weather, device] = await Promise.all([
     getWeather(env),
-    fetchDeviceData(env),
+    fetchDeviceData(env, E1001_DEVICE_ID),
   ]);
 
   // ?test-alert=tornado|winter|flood injects fake alerts for testing

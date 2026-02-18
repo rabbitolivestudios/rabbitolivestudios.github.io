@@ -11,12 +11,12 @@ import { handleColorAPODPage } from "./pages/color-apod";
 import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
-import { fetchDeviceData } from "./device";
+import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
 import { getChicagoDateParts } from "./date-utils";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
 
-const VERSION = "3.6.0";
+const VERSION = "3.6.1";
 
 // Simple in-memory rate limiter (per isolate lifecycle)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -213,8 +213,9 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     await getWeather(env);
     console.log("Cron: warmed weather cache");
 
-    await fetchDeviceData(env);
-    console.log("Cron: warmed device data cache");
+    await fetchDeviceData(env, E1001_DEVICE_ID);
+    await fetchDeviceData(env, E1002_DEVICE_ID);
+    console.log("Cron: warmed device data cache (both devices)");
 
     // --- Daily only: images + APOD ---
     if (!isDaily) return;
