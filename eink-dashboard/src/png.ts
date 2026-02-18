@@ -256,6 +256,16 @@ function makeIHDRGray8(width: number, height: number): Uint8Array {
   return makeChunk("IHDR", data);
 }
 
+/** Encode PNG bytes to base64 in chunks (avoids stack overflow). */
+export function pngToBase64(png: Uint8Array): string {
+  let binary = "";
+  const CHUNK = 8192;
+  for (let i = 0; i < png.length; i += CHUNK) {
+    binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 /**
  * Encode an 8-bit grayscale image as PNG.
  * @param gray - Uint8Array of size width*height, values 0 (black) to 255 (white).

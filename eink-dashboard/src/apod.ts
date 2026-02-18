@@ -11,7 +11,7 @@ import { decodePNG } from "./png-decode";
 import { centerCropRGB, resizeRGB } from "./image-color";
 import { ditherFloydSteinberg } from "./dither-spectra6";
 import { SPECTRA6_PALETTE } from "./spectra6";
-import { encodePNGIndexed } from "./png";
+import { encodePNGIndexed, pngToBase64 } from "./png";
 import { WIDTH, HEIGHT } from "./image";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -63,16 +63,6 @@ export async function getAPODData(env: Env, dateStr: string): Promise<APODData |
     console.error("APOD fetch error:", err);
     return cached?.data ?? null;
   }
-}
-
-/** Encode PNG bytes to base64 in chunks (avoids stack overflow). */
-function pngToBase64(png: Uint8Array): string {
-  let binary = "";
-  const CHUNK = 8192;
-  for (let i = 0; i < png.length; i += CHUNK) {
-    binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
 }
 
 /**

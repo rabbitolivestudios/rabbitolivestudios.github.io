@@ -17,6 +17,7 @@ import { getChicagoDateParts } from "./date-utils";
 import { parseMonth, parseDay, parseStyleIdx } from "./validate";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { getAPODData, getAPODColorImage } from "./apod";
+import { pngToBase64 } from "./png";
 
 const VERSION = "3.8.1";
 
@@ -92,16 +93,6 @@ async function handleFact(env: Env): Promise<Response> {
       60
     );
   }
-}
-
-/** Helper: encode PNG bytes to base64 in chunks (avoids stack overflow). */
-function pngToBase64(png: Uint8Array): string {
-  let binary = "";
-  const CHUNK = 8192;
-  for (let i = 0; i < png.length; i += CHUNK) {
-    binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
 }
 
 const PNG_HEADERS = {

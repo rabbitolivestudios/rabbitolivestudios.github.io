@@ -8,11 +8,12 @@
  * Route: /color/weather
  */
 
-import type { Env, WeatherResponse, DailyEntry, DeviceData, NWSAlert } from "../types";
+import type { Env, WeatherResponse, DeviceData, NWSAlert } from "../types";
 import { getWeatherForLocation } from "../weather";
 import { fetchDeviceData, E1002_DEVICE_ID } from "../device";
 import { spectra6CSS } from "../spectra6";
 import { escapeHTML } from "../escape";
+import { icon as sharedIcon, formatDate, formatTime, formatSunTime, formatDailyPrecip, getRainWarning } from "../weather-ui";
 
 // E1002 is at the office — Chicago Loop (60606)
 const OFFICE_LAT = 41.8781;
@@ -105,9 +106,7 @@ const ICONS: Record<string, string> = {
   </svg>`,
 };
 
-function icon(key: string, size: number): string {
-  return `<span style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle">${ICONS[key] ?? ICONS.clear}</span>`;
-}
+const ic = (key: string, size: number) => sharedIcon(ICONS, key, size);
 
 function batteryIcon(level: number, charging: boolean, size: number): string {
   const bodyW = 24;
@@ -136,68 +135,6 @@ function tempColor(tempC: number): string {
   return "var(--s6-red)";
 }
 
-function formatDate(isoDate: string): string {
-  const d = new Date(isoDate + "T12:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" }).toUpperCase();
-}
-
-function formatTime(isoTime: string): string {
-  const hour = parseInt(isoTime.slice(11, 13), 10);
-  if (hour === 0) return "12 AM";
-  if (hour === 12) return "12 PM";
-  if (hour < 12) return `${hour} AM`;
-  return `${hour - 12} PM`;
-}
-
-function formatSunTime(isoTime: string): string {
-  const hour = parseInt(isoTime.slice(11, 13), 10);
-  const min = isoTime.slice(14, 16);
-  if (hour === 0) return `12:${min} AM`;
-  if (hour === 12) return `12:${min} PM`;
-  if (hour < 12) return `${hour}:${min} AM`;
-  return `${hour - 12}:${min} PM`;
-}
-
-function formatDailyPrecip(d: DailyEntry): string {
-  if (d.snowfall_sum_cm > 0) {
-    const parts: string[] = [`${d.snowfall_sum_cm}cm snow`];
-    if (d.precip_prob_pct > 0) parts.unshift(`${d.precip_prob_pct}%`);
-    return parts.join(" | ");
-  }
-  if (d.precipitation_sum_mm > 0) {
-    const parts: string[] = [`${d.precipitation_sum_mm}mm rain`];
-    if (d.precip_prob_pct > 0) parts.unshift(`${d.precip_prob_pct}%`);
-    return parts.join(" | ");
-  }
-  if (d.precip_prob_pct > 0) return `${d.precip_prob_pct}% rain`;
-  return "";
-}
-
-function getRainWarning(w: WeatherResponse): string | null {
-  if (w.precip_next_2h.length > 0) {
-    for (let i = 0; i < w.precip_next_2h.length; i++) {
-      if (w.precip_next_2h[i] > 0) {
-        const minutes = (i + 1) * 15;
-        if (minutes <= 30) return "Rain in 30 min";
-        if (minutes <= 60) return "Rain in ~1h";
-        return "Rain in ~2h";
-      }
-    }
-  }
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-  const p = fmt.formatToParts(new Date());
-  const pv = (t: string) => p.find(x => x.type === t)!.value;
-  const nowISO = `${pv("year")}-${pv("month")}-${pv("day")}T${pv("hour")}:${pv("minute")}`;
-  const futureHours = w.hourly_12h.filter(h => h.time >= nowISO);
-  const next3 = futureHours.slice(0, 3);
-  if (next3.some(h => h.precip_prob_pct > 70)) return "Rain likely in next 3h";
-  return null;
-}
-
 function renderHTML(w: WeatherResponse, device: DeviceData | null = null): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -212,12 +149,12 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   const cur = w.current;
   const tColor = tempColor(cur.temp_c);
 
-  let windStr = `${icon("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh}`;
+  let windStr = `${ic("wind", 22)} ${cur.wind_dir_label} ${cur.wind_kmh}`;
   if (cur.wind_gusts_kmh > cur.wind_kmh + 10) windStr += `-${cur.wind_gusts_kmh}`;
   windStr += " km/h";
 
   const sunLine = w.sunrise && w.sunset
-    ? `<div class="cur-sun">${icon("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${icon("sunset", 28)} ${formatSunTime(w.sunset)}</div>`
+    ? `<div class="cur-sun">${ic("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${ic("sunset", 28)} ${formatSunTime(w.sunset)}</div>`
     : "";
 
   const dailyHTML = w.daily_5d.map(d => {
@@ -227,7 +164,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
     return `
       <div class="day">
         <div class="day-name">${formatDate(d.date)}</div>
-        <div class="day-icon">${icon(d.icon, 38)}</div>
+        <div class="day-icon">${ic(d.icon, 38)}</div>
         <div class="day-temps"><span style="color:${highColor}">${d.high_c}°</span> / <span style="color:${lowColor}">${d.low_c}°</span></div>
         ${precipStr ? `<div class="day-precip">${precipStr}</div>` : '<div class="day-precip"></div>'}
       </div>`;
@@ -244,7 +181,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   } else {
     const rainWarn = getRainWarning(w);
     if (rainWarn) {
-      bannerHTML = `<div class="rain-warning">${icon("droplet", 18)} ${rainWarn}</div>`;
+      bannerHTML = `<div class="rain-warning">${ic("droplet", 18)} ${rainWarn}</div>`;
     }
   }
 
@@ -264,7 +201,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
     return `
       <div class="hour">
         <div class="hour-time">${formatTime(h.time)}</div>
-        <div class="hour-icon">${icon(h.icon, 28)}</div>
+        <div class="hour-icon">${ic(h.icon, 28)}</div>
         <div class="hour-temp" style="color:${hColor}">${h.temp_c}°</div>
         ${h.precip_prob_pct > 0 ? `<div class="hour-precip">${h.precip_prob_pct}% rain</div>` : '<div class="hour-precip"></div>'}
       </div>`;
@@ -349,7 +286,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 <body>
   <div class="header">
     <div class="location">${escapeHTML(w.location.name.toUpperCase())}</div>
-    ${device ? `<div class="header-center">${icon("house", 18)}<span>${device.indoor_temp_c}°C</span>${icon("droplet", 14)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
+    ${device ? `<div class="header-center">${ic("house", 18)}<span>${device.indoor_temp_c}°C</span>${ic("droplet", 14)}<span>${device.indoor_humidity_pct}%</span></div>` : ""}
     <div class="header-right">
       <div class="datetime">${dateStr} | ${timeStr}</div>
       ${device ? `<div class="battery">${batteryIcon(device.battery_level, device.battery_charging, 20)} ${device.battery_level}%</div>` : ""}
@@ -358,11 +295,11 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
 
   <div class="current">
     <div class="cur-temp" style="color:${tColor}">${cur.temp_c}°C</div>
-    <div class="cur-icon">${icon(cur.condition.icon, 64)}</div>
+    <div class="cur-icon">${ic(cur.condition.icon, 64)}</div>
     <div class="cur-details">
       <div class="cur-condition">${cur.condition.label}</div>
       <div class="cur-meta">
-        Feels like <span style="color:${tempColor(cur.feels_like_c)}">${cur.feels_like_c}°C</span> | ${icon("droplet", 18)} ${cur.humidity_pct}% | ${windStr}
+        Feels like <span style="color:${tempColor(cur.feels_like_c)}">${cur.feels_like_c}°C</span> | ${ic("droplet", 18)} ${cur.humidity_pct}% | ${windStr}
       </div>
       ${sunLine}
     </div>

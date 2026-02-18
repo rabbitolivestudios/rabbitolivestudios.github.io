@@ -38,7 +38,7 @@ export async function getWeather(env: Env): Promise<WeatherResponse> {
       throw new Error(`Open-Meteo returned ${res.status}`);
     }
     const raw: any = await res.json();
-    const weather = normalize(raw, alerts);
+    const weather = normalizeWeather(raw, alerts, LAT, LON, "60540", "Naperville, IL");
 
     // Store in cache
     await env.CACHE.put(CACHE_KEY, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 86400 });
@@ -54,90 +54,6 @@ export async function getWeather(env: Env): Promise<WeatherResponse> {
 
 function windDirLabel(deg: number): string {
   return WIND_DIRS[Math.round(deg / 45) % 8];
-}
-
-function normalize(raw: any, alerts: import("./types").NWSAlert[]): WeatherResponse {
-  const current = raw.current;
-  const hourly = raw.hourly;
-  const daily = raw.daily;
-  const currentIsDay = current.is_day === 1;
-  const condInfo = getWeatherInfo(current.weather_code, currentIsDay);
-
-  const hourly12h: HourlyEntry[] = [];
-  const hourlyLen = Math.min(hourly.time.length, 24);
-  for (let i = 0; i < hourlyLen; i++) {
-    const isDay = hourly.is_day?.[i] === 1;
-    const info = getWeatherInfo(hourly.weather_code[i], isDay);
-    hourly12h.push({
-      time: hourly.time[i],
-      temp_c: Math.round(hourly.temperature_2m[i]),
-      precip_prob_pct: hourly.precipitation_probability[i] ?? 0,
-      precip_mm: round2(hourly.precipitation[i] ?? 0),
-      code: hourly.weather_code[i],
-      icon: info.icon,
-      is_day: isDay,
-    });
-  }
-
-  const daily5d: DailyEntry[] = [];
-  const dailyLen = Math.min(daily.time.length, 5);
-  for (let i = 0; i < dailyLen; i++) {
-    const info = getWeatherInfo(daily.weather_code[i]);
-    daily5d.push({
-      date: daily.time[i],
-      high_c: Math.round(daily.temperature_2m_max[i]),
-      low_c: Math.round(daily.temperature_2m_min[i]),
-      precip_prob_pct: daily.precipitation_probability_max[i] ?? 0,
-      precipitation_sum_mm: round2(daily.precipitation_sum?.[i] ?? 0),
-      snowfall_sum_cm: round2(daily.snowfall_sum?.[i] ?? 0),
-      code: daily.weather_code[i],
-      icon: info.icon,
-      sunrise: daily.sunrise[i],
-      sunset: daily.sunset[i],
-    });
-  }
-
-  // Extract 15-min precipitation for next 2 hours (up to 8 values)
-  const precip_next_2h: number[] = [];
-  const minutely15 = raw.minutely_15;
-  if (minutely15?.precipitation) {
-    for (let i = 0; i < Math.min(minutely15.precipitation.length, 8); i++) {
-      precip_next_2h.push(round2(minutely15.precipitation[i] ?? 0));
-    }
-  }
-
-  return {
-    location: {
-      zip: "60540",
-      name: "Naperville, IL",
-      lat: LAT,
-      lon: LON,
-      tz: "America/Chicago",
-    },
-    updated_at: current.time,
-    current: {
-      temp_c: Math.round(current.temperature_2m),
-      feels_like_c: Math.round(current.apparent_temperature),
-      humidity_pct: Math.round(current.relative_humidity_2m),
-      wind_kmh: Math.round(current.wind_speed_10m),
-      wind_dir_deg: Math.round(current.wind_direction_10m),
-      wind_dir_label: windDirLabel(current.wind_direction_10m),
-      wind_gusts_kmh: Math.round(current.wind_gusts_10m ?? 0),
-      is_day: currentIsDay,
-      precip_mm_hr: round2(current.precipitation),
-      condition: {
-        code: current.weather_code,
-        label: condInfo.label,
-        icon: condInfo.icon,
-      },
-    },
-    hourly_12h: hourly12h,
-    daily_5d: daily5d,
-    precip_next_2h,
-    alerts,
-    sunrise: daily5d[0]?.sunrise ?? "",
-    sunset: daily5d[0]?.sunset ?? "",
-  };
 }
 
 function round2(n: number): number {
@@ -182,7 +98,7 @@ export async function getWeatherForLocation(
     ]);
     if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
     const raw: any = await res.json();
-    const weather = normalizeForLocation(raw, alerts, lat, lon, zip, name);
+    const weather = normalizeWeather(raw, alerts, lat, lon, zip, name);
 
     await env.CACHE.put(cacheKey, JSON.stringify({ data: weather, timestamp: Date.now() }), { expirationTtl: 86400 });
     return weather;
@@ -195,7 +111,7 @@ export async function getWeatherForLocation(
   }
 }
 
-function normalizeForLocation(
+function normalizeWeather(
   raw: any,
   alerts: import("./types").NWSAlert[],
   lat: number,

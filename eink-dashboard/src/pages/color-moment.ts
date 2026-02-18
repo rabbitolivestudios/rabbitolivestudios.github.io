@@ -20,7 +20,7 @@ import { generateAndDecodeColorFlux, generateAndDecodeColor, centerCropRGB, resi
 import { decodePNG } from "../png-decode";
 import { ditherFloydSteinberg } from "../dither-spectra6";
 import { SPECTRA6_PALETTE } from "../spectra6";
-import { encodePNGIndexed } from "../png";
+import { encodePNGIndexed, pngToBase64 } from "../png";
 import { spectra6CSS } from "../spectra6";
 import { WIDTH, HEIGHT } from "../image";
 import { escapeHTML } from "../escape";
@@ -66,16 +66,6 @@ export function getColorMomentStyle(dateStr: string): typeof COLOR_MOMENT_STYLES
   const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86400000) + 1;
   return COLOR_MOMENT_STYLES[(dayOfYear - 1) % COLOR_MOMENT_STYLES.length];
-}
-
-/** Encode PNG bytes to base64 in chunks. */
-function pngToBase64(png: Uint8Array): string {
-  let binary = "";
-  const CHUNK = 8192;
-  for (let i = 0; i < png.length; i += CHUNK) {
-    binary += String.fromCharCode(...png.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
 }
 
 /** Generate a color Spectra 6 moment image, returns base64 PNG + styleId. */

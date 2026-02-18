@@ -28,7 +28,7 @@ export function applyToneCurve(gray: Uint8Array, contrast: number, gamma: number
  * Walk from 0 (black/darkest) upward, accumulating pixel count.
  * When accumulated >= targetCount, that gray value = threshold T.
  * Pixels with gray <= T become black.
- * Clamp T to [140, 220] to avoid extreme results.
+ * Clamp T to [100, 220] to avoid extreme results.
  */
 export function thresholdFromHistogram(gray: Uint8Array, targetBlackPct: number): number {
   const total = gray.length;
