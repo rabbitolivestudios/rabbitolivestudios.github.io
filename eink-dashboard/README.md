@@ -37,6 +37,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /color/apod` | 800x480 color NASA APOD image (dithered to 6 colors) | 24 hours |
 | `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
 | `GET /color/test-moment?m=MM&d=DD&style=ID&key=KEY` | Generate color moment for any date + optional style override (requires `TEST_AUTH_KEY`) | none |
+| `GET /color/test-birthday?name=KEY&style=N&key=KEY` | Generate color birthday portrait (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
 | `GET /health` | Status check | none |
 

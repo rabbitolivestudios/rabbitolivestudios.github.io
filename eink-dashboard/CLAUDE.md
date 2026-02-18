@@ -48,7 +48,7 @@ Every session must begin with these steps:
 - **Repo**: `rabbitolivestudios/rabbitolivestudios.github.io`
 - **Subdirectory**: `eink-dashboard/`
 - **Live URL**: `https://eink-dashboard.thiago-oliveira77.workers.dev`
-- **Display**: reTerminal E1001 (ESP32-S3, 7.5" ePaper, 800x480px)
+- **Displays**: reTerminal E1001 (mono, 7.5" ePaper, 800x480) + reTerminal E1002 (Spectra 6 color, 7.3", 800x480)
 - **Device manager**: SenseCraft HMI (Web Function screenshots URLs)
 
 ---
@@ -92,9 +92,9 @@ This project has independent image pipelines. They share the LLM event selection
 | | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) | Pipeline D (`/color/moment`) |
 |---|---|---|---|
 | Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) |
-| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | Screen print poster (flat inks) |
+| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | 5-style rotation (gouache/oil/graphic/ink/woodblock) |
 | Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) |
-| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v1:YYYY-MM-DD` |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` |
 | Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) |
 
 ---
@@ -178,6 +178,8 @@ Do not commit documentation updates until you have verified every file.
 - SDXL does NOT support `negative_prompt` — embed negatives in positive prompt
 - FLUX.2 requires multipart FormData, not JSON
 - KV cache dates use America/Chicago timezone
+- All external fetches must use `fetchWithTimeout()` from `src/fetch-timeout.ts`
+- All KV `.put()` calls must include `expirationTtl` (3600 for ephemeral, 604800 for daily)
 
 ---
 
@@ -258,6 +260,7 @@ eink-dashboard/
   src/
     index.ts              — Main router, cron handler, VERSION constant
     types.ts              — All TypeScript interfaces
+    date-utils.ts         — Chicago timezone date helpers
     weather.ts            — Open-Meteo weather fetch + KV cache
     weather-codes.ts      — WMO code → label/icon mapping, day/night overrides
     alerts.ts             — NWS weather alerts fetch + KV cache
@@ -265,16 +268,27 @@ eink-dashboard/
     fact.ts               — Wikipedia "On This Day" fetch + KV cache
     moment.ts             — LLM event selection + scene prompt generation
     image.ts              — Pipeline A (FLUX.2 4-level) + Pipeline B (SDXL 1-bit)
+    image-color.ts        — RGB crop/resize + AI-to-RGB decode helpers
+    convert-1bit.ts       — 1-bit conversion engine (Bayer + threshold)
+    styles-1bit.ts        — Pipeline B style table, picker, hash
     birthday.ts           — Birthday data + detection
     birthday-image.ts     — Birthday portrait generation (FLUX.2 + R2 photos)
     escape.ts             — HTML escaping utility (escapeHTML)
     fetch-timeout.ts      — fetchWithTimeout() utility (AbortController-based)
-    png.ts                — Pure JS PNG encoder (8-bit + 1-bit)
+    headlines.ts          — Steel/trade RSS + LLM summarizer
+    apod.ts               — NASA APOD fetcher + Spectra 6 image processor
+    spectra6.ts           — Spectra 6 palette constants + CSS variables
+    dither-spectra6.ts    — Floyd-Steinberg dithering engine
+    png.ts                — Pure JS PNG encoder (8-bit, 1-bit, indexed)
     png-decode.ts         — PNG decoder (RGB, RGBA, Gray, GrayAlpha)
     font.ts               — 8x8 bitmap font (CP437)
     pages/
-      weather2.ts         — /weather HTML page (800x480 e-ink dashboard)
+      weather2.ts         — /weather HTML page (E1001 mono)
       fact.ts             — /fact HTML wrapper for fact.png
+      color-weather.ts    — /color/weather HTML page (E1002 Spectra 6)
+      color-moment.ts     — /color/moment + color birthday + test endpoints
+      color-apod.ts       — /color/apod HTML page
+      color-headlines.ts  — /color/headlines HTML page
   photos/                 — Birthday reference photos source
   scripts/                — Upload scripts
   CLAUDE.md               — This file

@@ -254,7 +254,7 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 
 **Timezone:** Cache keys use America/Chicago date (the target location). This avoids serving yesterday's image when it's past midnight UTC but still the same day in Chicago.
 
-**Pre-warming:** A daily cron at 10:00 UTC (4:00 AM Chicago) generates and caches both the 4-level and 1-bit images so the first viewer gets a fast response.
+**Pre-warming:** A daily cron at 06:05 UTC (12:05 AM Chicago) generates and caches both the 4-level and 1-bit images so the first viewer gets a fast response. A separate every-6-hour cron refreshes headlines and weather.
 
 ---
 
@@ -505,6 +505,18 @@ The color moment pipeline (`/color/moment`) previously sent the LLM's scene-only
 | Floyd-Steinberg for Spectra 6 color | Used Floyd-Steinberg | Spectra 6 renders pixels exactly — no double-dithering issue; FS gives best 6-color results |
 | AI-generated line art for 1-bit | Dither the same tonal image | SDXL cannot generate true line art; style keywords corrupt scene content |
 | Server-side color page rendering as PNG | HTML with inline base64 PNG | SenseCraft screenshots HTML; HTML caption is crisper than bitmap font on indexed image |
+| User-configurable location | Hardcoded per-device (Naperville E1001, Chicago E1002) | Single-user; E1001 at home (60540), E1002 at office (60606) |
+| Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
+| "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |
+| Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
+| Single art style for Pipeline B | 6-style rotation (v3.3.0) | Variety with style-aware conversion; each style picks Bayer or threshold mode for best results |
+| Newsprint dots style for Pipeline B | Replaced with charcoal_block | Newsprint ran too dark on SDXL output; charcoal_block produces better 1-bit results with threshold mode |
+| Shared FLUX.2 code with Moment Before pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
+| Shared `callFluxPortrait` between mono and color birthday | Shared (exported from birthday-image.ts) | Color birthday previously used `generateBirthdayJPEG` wrapper that duplicated retry logic and age description. Now both pipelines call `callFluxPortrait` directly with explicit retry loops at the call site. |
+| Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
+| Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
+| Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |
+| No style for color moment | 5-style daily rotation (v3.6.0) | Previous "no style" produced too-variable dither quality; 5 curated styles produce large flat color areas that dither well to Spectra 6 palette |
 
 ---
 
@@ -527,18 +539,6 @@ We treat this key as a **public/shared platform key**, not a private credential.
 **Boundary:**
 - This policy applies only to this SenseCraft shared key pattern.
 - Real secrets (for example `APOD_API_KEY` and any private tokens) remain in Worker secrets and are never committed.
-| User-configurable location | Hardcoded per-device (Naperville E1001, Chicago E1002) | Single-user; E1001 at home (60540), E1002 at office (60606) |
-| Separate LLM prompts per pipeline | Single scene-only SYSTEM_PROMPT | Style is a rendering concern — prepended per-pipeline, not baked into LLM |
-| "Moment before" scene direction | "Event itself" scene direction | Pre-event scenes were too calm/ambiguous on e-ink; the event in action is instantly recognizable |
-| Single art style for Pipeline A | Daily rotation (3 styles) | Variety keeps the daily image fresh; Woodcut, Pencil Sketch, and Charcoal all work well on e-ink |
-| Single art style for Pipeline B | 6-style rotation (v3.3.0) | Variety with style-aware conversion; each style picks Bayer or threshold mode for best results |
-| Newsprint dots style for Pipeline B | Replaced with charcoal_block | Newsprint ran too dark on SDXL output; charcoal_block produces better 1-bit results with threshold mode |
-| Shared FLUX.2 code with Moment Before pipeline | Separate implementations | ~20 lines of FormData logic; birthday has reference images, Moment Before doesn't — not worth abstracting |
-| Shared `callFluxPortrait` between mono and color birthday | Shared (exported from birthday-image.ts) | Color birthday previously used `generateBirthdayJPEG` wrapper that duplicated retry logic and age description. Now both pipelines call `callFluxPortrait` directly with explicit retry loops at the call site. |
-| Separate wind line in weather details | Merged onto feels-like line | Saves ~22px vertical; gusts shown as compact range format (e.g. "15-25 km/h") |
-| Indoor data in weather details section | Moved to header center | Saves ~20px vertical; keeps header row compact with house+droplet icons |
-| Reshuffle entire layout for alerts | Targeted 2-line merge | Wholesale layout changes caused inconsistent visual between alert/no-alert states |
-| No style for color moment | 5-style daily rotation (v3.6.0) | Previous "no style" produced too-variable dither quality; 5 curated styles produce large flat color areas that dither well to Spectra 6 palette |
 
 ---
 
