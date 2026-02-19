@@ -206,7 +206,7 @@ Chicago date → birthday check (9 family members)
         FLUX.2 klein-9b (multipart FormData, guidance 7.0, reference images)
                 │
                 ▼
-        base64 decode → JPEG→PNG → grayscale → center-crop → resize to 800×480
+        base64 decode → Cloudflare Images (JPEG→PNG, resize to 800×480) → grayscale
                 │
                 ▼
         Birthday caption (24px black bar: "Happy Birthday!" | "Name - age years" | style name)
@@ -243,10 +243,7 @@ Prepend style prompt + color palette suffix + anti-text suffix
 FLUX.2 klein-9b → JPEG  [fallback: SDXL]
         │
         ▼
-Cloudflare Images (JPEG → PNG) → decode RGB
-        │
-        ▼
-Center-crop → resize to 800x480 (RGB)
+Cloudflare Images (.transform → center-crop + resize to 800×480, PNG) → decode RGB
         │
         ▼
 Floyd-Steinberg dithering → 6-color Spectra palette indices
@@ -284,7 +281,7 @@ KV cache (24h)
 │  reTerminal  │────▶│  │ • FLUX.2/SDXL │  │     │  (weather)    │
 │  E1002       │     │  ├────────────────┤  │     └──────────────┘
 │  (Spectra 6) │◀────│  │ Images API     │  │     ┌──────────────┐
-└─────────────┘     │  │ (JPEG→PNG)     │  │────▶│  NWS API      │
+└─────────────┘     │  │ (resize+convert│  │────▶│  NWS API      │
                      │  ├────────────────┤  │     │  (alerts)     │
                      │  │ KV Cache       │  │     └──────────────┘
                      │  │ (24h/6h TTL)   │  │     ┌──────────────┐
@@ -303,7 +300,7 @@ KV cache (24h)
 | Binding | Service | Purpose |
 |---------|---------|---------|
 | `env.AI` | Workers AI | LLM + image generation (SDXL + FLUX.2) |
-| `env.IMAGES` | Cloudflare Images | JPEG → PNG conversion |
+| `env.IMAGES` | Cloudflare Images | Format conversion + center-crop/resize to 800×480 via `.transform()` |
 | `env.CACHE` | KV Namespace | Response caching (24h/6h) |
 | `env.PHOTOS` | R2 Bucket | Birthday reference photos |
 | `env.APOD_API_KEY` | Secret | NASA APOD API key (optional, falls back to DEMO_KEY) |
@@ -378,6 +375,7 @@ The display will automatically cycle between pages every 15 minutes. Each page e
 | Stale image in browser | Browser caches for 24h. Hard refresh with Cmd+Shift+R |
 | Weather not updating on device | Check the Interval setting in SenseCraft HMI and that the device is online |
 | Image too large for KV | KV values max 25MB. Current images are ~20-230KB (well within limits) |
+| Error 1102 on `/color/apod` | Worker CPU limit exceeded — usually caused by a very large external image. Since v3.9.1, Cloudflare Images handles resize before JS decode. If it recurs, check `npx wrangler tail` and verify the APOD image URL is reachable. |
 | Wrong location weather | Edit `src/weather.ts` — coordinates are hardcoded for Naperville, IL (60540) |
 | No weather alerts showing | NWS alerts only cover active US warnings. Check `api.weather.gov` for your area. Alerts cache for 5 min in KV. |
 | Emoji not showing on display | ESP32-S3 renderer doesn't support emoji. Use inline SVG or text labels. |
