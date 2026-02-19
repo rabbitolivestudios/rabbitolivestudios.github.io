@@ -8,7 +8,6 @@
 import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, APODData, CachedValue } from "./types";
 import { decodePNG } from "./png-decode";
-import { centerCropRGB, resizeRGB } from "./image-color";
 import { ditherFloydSteinberg } from "./dither-spectra6";
 import { SPECTRA6_PALETTE } from "./spectra6";
 import { encodePNGIndexed, pngToBase64 } from "./png";
@@ -82,8 +81,8 @@ export async function getAPODColorImage(env: Env, dateStr: string): Promise<stri
   if (!apod || apod.media_type !== "image" || !apod.url) return null;
 
   try {
-    // Use HD URL if available, fall back to regular URL
-    const imageUrl = apod.hdurl || apod.url;
+    // Use standard URL (not HD) — HD images can be 4000+ px and exceed Worker CPU limits
+    const imageUrl = apod.url;
     const imgRes = await fetchWithTimeout(imageUrl, {
       headers: { "User-Agent": "eink-dashboard/3.5 (Cloudflare Worker)" },
     }, 15000);
@@ -91,21 +90,20 @@ export async function getAPODColorImage(env: Env, dateStr: string): Promise<stri
 
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
 
-    // Convert to PNG via Cloudflare Images (handles JPEG, WebP, etc.)
-    const pngResponse = (await env.IMAGES.input(imgBytes).output({ format: "image/png" })).response();
+    // Center-crop and resize to 800×480 via Cloudflare Images — avoids decoding a
+    // multi-megapixel source image in JS (which would exceed Worker CPU limits)
+    const pngResponse = (await env.IMAGES
+      .input(imgBytes)
+      .transform({ width: WIDTH, height: HEIGHT, fit: "cover" })
+      .output({ format: "image/png" })
+    ).response();
     const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
     const decoded = await decodePNG(pngBytes);
 
     if (!decoded.rgb) throw new Error("Expected color image");
 
-    // Center-crop and resize to 800x480
-    const cropped = centerCropRGB(decoded.rgb, decoded.width, decoded.height, WIDTH, HEIGHT);
-    const rgb = (cropped.width === WIDTH && cropped.height === HEIGHT)
-      ? cropped.rgb
-      : resizeRGB(cropped.rgb, cropped.width, cropped.height, WIDTH, HEIGHT);
-
-    // Dither to Spectra 6 palette
-    const indices = ditherFloydSteinberg(rgb, WIDTH, HEIGHT, SPECTRA6_PALETTE);
+    // Dither to Spectra 6 palette (already 800×480 from Images transform)
+    const indices = ditherFloydSteinberg(decoded.rgb, WIDTH, HEIGHT, SPECTRA6_PALETTE);
 
     // Encode as palette-indexed PNG
     const png = await encodePNGIndexed(indices, WIDTH, HEIGHT, SPECTRA6_PALETTE);

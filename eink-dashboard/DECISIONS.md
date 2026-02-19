@@ -752,3 +752,46 @@ Added `console.warn` when APOD falls back to DEMO_KEY — makes it visible in `w
 **Why `allSettled` not `all`:** `Promise.all` short-circuits on first rejection. One failing pipeline (e.g. FLUX.2 timeout) would abort all other pending image generations. `allSettled` lets all tasks complete independently.
 
 **Expected improvement:** ~40% wall-clock reduction on daily cron — 3 image generation tasks (Pipeline A, B, color moment) now run concurrently instead of serially. Each takes ~10-30s; parallel execution bounded by the slowest instead of the sum.
+
+---
+
+## 27. Use Cloudflare Images `.transform()` for Resize, Not JS (v3.9.1)
+
+### Problem
+
+The APOD pipeline (`/color/apod`) was throwing Error 1102 (Worker exceeded resource limits).
+
+**Root cause:** APOD images are fetched from NASA with unpredictable dimensions. The HD URL (`hdurl`) can be 4000+ px wide (~36 MB of uncompressed RGB). The previous code:
+1. Fetched the HD JPEG
+2. Converted format only (`env.IMAGES.input().output({ format: "image/png" })`)
+3. Decoded the full-resolution PNG in JavaScript (huge buffer)
+4. Ran `centerCropRGB` + `resizeRGB` in JS on that large buffer
+5. Ran Floyd-Steinberg dither on the large buffer
+
+Steps 3–5 are pure JavaScript, O(width×height), and blew the Workers CPU budget for large inputs.
+
+### Solution: Push resize into Cloudflare Images
+
+**Changed to:** `env.IMAGES.input(imgBytes).transform({ width: WIDTH, height: HEIGHT, fit: "cover" }).output({ format: "image/png" })`
+
+This does center-crop + resize natively in Cloudflare's image processing infrastructure, outside the Worker's CPU budget. The Worker receives an already-sized 800×480 PNG, which is ~1.8 MB uncompressed — trivial to decode and dither.
+
+**Also dropped `hdurl`** — the standard APOD URL is ~1050px wide, more than sufficient for an 800×480 display. The HD URL adds download latency + processing cost with no visible benefit.
+
+### Applied to: external images only
+
+- **APOD** (`apod.ts`): uses external NASA images of unknown size → `.transform()` is essential
+- **AI pipelines** (`image-color.ts`, `color-moment.ts`): output is fixed 1024×768 → `.transform()` is an optimization (removes JS crop/resize, not a correctness fix)
+
+### `fit: "cover"` behavior
+
+Cloudflare Images `fit: "cover"` is equivalent to our `centerCropRGB` + `resizeRGB`:
+- Resizes to fill exactly `width × height`
+- Center-crops the longer dimension
+- Same visual result, executed outside the Worker
+
+### Rule going forward
+
+> For any pipeline that fetches **external images of unknown dimensions**, always use `.transform({ width: WIDTH, height: HEIGHT, fit: "cover" })` in the `env.IMAGES` call. Never decode a large external image in JS.
+>
+> For AI-generated images (fixed 1024×768 output), `.transform()` is optional but preferred — it eliminates the JS crop/resize pass and simplifies the pipeline.

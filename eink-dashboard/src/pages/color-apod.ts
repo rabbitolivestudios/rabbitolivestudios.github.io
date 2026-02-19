@@ -102,28 +102,36 @@ function renderTextFallback(title: string, explanation: string, date: string, co
 }
 
 export async function handleColorAPODPage(env: Env, url: URL): Promise<Response> {
-  const dateStr = getChicagoDateISO();
+  try {
+    const dateStr = getChicagoDateISO();
 
-  const [apod, imageB64] = await Promise.all([
-    getAPODData(env, dateStr),
-    getAPODColorImage(env, dateStr),
-  ]);
+    const [apod, imageB64] = await Promise.all([
+      getAPODData(env, dateStr),
+      getAPODColorImage(env, dateStr),
+    ]);
 
-  let html: string;
+    let html: string;
 
-  if (apod && imageB64) {
-    html = renderImageHTML(imageB64, apod.title, apod.copyright, apod.date);
-  } else if (apod) {
-    // Video or image processing failed — text fallback
-    html = renderTextFallback(apod.title, apod.explanation, apod.date, apod.copyright);
-  } else {
-    // Complete failure
-    html = renderTextFallback(
-      "Astronomy Picture of the Day",
-      "Unable to load today's APOD. Please try again later.",
-      dateStr
-    );
+    if (apod && imageB64) {
+      html = renderImageHTML(imageB64, apod.title, apod.copyright, apod.date);
+    } else if (apod) {
+      // Video or image processing failed — text fallback
+      html = renderTextFallback(apod.title, apod.explanation, apod.date, apod.copyright);
+    } else {
+      // Complete failure
+      html = renderTextFallback(
+        "Astronomy Picture of the Day",
+        "Unable to load today's APOD. Please try again later.",
+        dateStr
+      );
+    }
+
+    return htmlResponse(html, "public, max-age=86400");
+  } catch (err) {
+    console.error("Color APOD page error:", err);
+    return new Response("APOD page temporarily unavailable", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "300" },
+    });
   }
-
-  return htmlResponse(html, "public, max-age=86400");
 }
