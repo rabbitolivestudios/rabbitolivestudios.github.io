@@ -376,6 +376,7 @@ The display will automatically cycle between pages every 15 minutes. Each page e
 | Weather not updating on device | Check the Interval setting in SenseCraft HMI and that the device is online |
 | Image too large for KV | KV values max 25MB. Current images are ~20-230KB (well within limits) |
 | Error 1102 on `/color/apod` | Worker CPU limit exceeded — usually caused by a very large external image. Since v3.9.1, Cloudflare Images handles resize before JS decode. If it recurs, check `npx wrangler tail` and verify the APOD image URL is reachable. |
+| Hourly cards clipped on weather page | If alert banner is present, hourly cards should shrink to fit. Both pages use flex column layout since 2026-02-19. If still clipped, check for extra padding or new sections pushing content past 480px. |
 | Wrong location weather | Edit `src/weather.ts` — coordinates are hardcoded for Naperville, IL (60540) |
 | No weather alerts showing | NWS alerts only cover active US warnings. Check `api.weather.gov` for your area. Alerts cache for 5 min in KV. |
 | Emoji not showing on display | ESP32-S3 renderer doesn't support emoji. Use inline SVG or text labels. |

@@ -795,3 +795,27 @@ Cloudflare Images `fit: "cover"` is equivalent to our `centerCropRGB` + `resizeR
 > For any pipeline that fetches **external images of unknown dimensions**, always use `.transform({ width: WIDTH, height: HEIGHT, fit: "cover" })` in the `env.IMAGES` call. Never decode a large external image in JS.
 >
 > For AI-generated images (fixed 1024×768 output), `.transform()` is optional but preferred — it eliminates the JS crop/resize pass and simplifies the pipeline.
+
+---
+
+## 28. Weather Page Flex Layout for Alert Banner (2026-02-19)
+
+### Problem: Hourly cards clipped when alert banner is shown
+
+Both weather pages (`/weather`, `/color/weather`) used static block layout (`padding: 16px 28px`) inside a fixed 800x480 body with `overflow: hidden`. When an NWS alert banner appeared (~30-50px), it pushed the "Next Hours" section below the 480px fold, causing hourly cards to be hard-clipped and invisible on the e-ink display.
+
+Observed on E1002 with a Wind Advisory on 2026-02-19.
+
+### Fix: CSS flexbox column layout
+
+Converted `<body>` to `display: flex; flex-direction: column` so that sections distribute space vertically. The `.hourly` container gets `flex: 1; min-height: 0; overflow: hidden` — it takes remaining space after header, current conditions, daily forecast, and any alert banner, then shrinks gracefully.
+
+Also clamped `.alert-banner` to single line (`white-space: nowrap; overflow: hidden; text-overflow: ellipsis`) to prevent pathological multi-alert text from consuming too much vertical space. At 744px usable width and 16px bold font, this fits ~60-70 characters (2-3 alert names).
+
+### What this does NOT change
+
+- No TypeScript logic changes
+- No card count changes (still 6 hourly cards, 5 daily cards)
+- No font size or padding changes
+- No changes to alert/rain warning mutual exclusivity logic
+- No visual difference in the no-alert case (flex column matches old block layout)
