@@ -218,6 +218,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     width: 800px; height: 480px; overflow: hidden;
+    display: flex; flex-direction: column;
     background: #fff; color: #000;
     font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
     padding: 16px 28px;
@@ -264,6 +265,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
     font-size: 16px; font-weight: 700;
     padding: 6px 10px; text-align: center;
     margin-bottom: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .rain-warning {
     font-size: 16px; font-weight: 700;
@@ -271,6 +273,7 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   }
   .hourly {
     display: flex; gap: 10px;
+    flex: 1; min-height: 0; overflow: hidden;
   }
   .hour {
     flex: 1; text-align: center;
