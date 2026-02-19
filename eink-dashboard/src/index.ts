@@ -198,6 +198,95 @@ function handleHealth(): Response {
   );
 }
 
+async function handleHealthDetailed(env: Env): Promise<Response> {
+  const { month, day, dateStr } = getChicagoDateParts();
+  const monthNum = parseInt(month);
+  const dayNum = parseInt(day);
+  const now = Date.now();
+
+  function parseEphemeral(raw: string | null): { timestamp: number } | null {
+    if (!raw) return null;
+    try { return JSON.parse(raw) as { timestamp: number }; } catch { return null; }
+  }
+
+  function ageMins(entry: { timestamp: number } | null): number | null {
+    if (!entry) return null;
+    return Math.round((now - entry.timestamp) / 6000) / 10;
+  }
+
+  function ephemeralStatus(entry: { timestamp: number } | null, softTtlMin: number) {
+    const age = ageMins(entry);
+    return { cached: entry !== null, age_min: age, stale: age !== null ? age > softTtlMin : true };
+  }
+
+  // Determine daily image keys (birthday-aware)
+  const birthday = getBirthdayToday(monthNum, dayNum);
+  const colorStyle = getColorMomentStyle(dateStr);
+  const period = getCurrentPeriod();
+  const fact4Key = birthday ? `birthday:v1:${dateStr}` : `fact4:v4:${dateStr}`;
+  const fact1Key = `fact1:v7:${dateStr}`;
+  const colorMomentKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
+  const apodColorKey = `apod-color:v1:${dateStr}`;
+  const momentKey = `moment:v1:${dateStr}`;
+  const apodMetaKey = `apod:v1:${dateStr}`;
+  const headlinesKey = `headlines:v1:${dateStr}:${period}`;
+
+  // Fetch all keys in parallel
+  const [
+    fact4Raw, fact1Raw, colorMomentRaw, apodColorRaw, momentRaw, apodMetaRaw,
+    weatherHomeRaw, weatherOfficeRaw,
+    alertsHomeRaw, alertsOfficeRaw,
+    deviceHomeRaw, deviceOfficeRaw,
+    headlinesRaw,
+  ] = await Promise.all([
+    env.CACHE.get(fact4Key),
+    env.CACHE.get(fact1Key),
+    env.CACHE.get(colorMomentKey),
+    env.CACHE.get(apodColorKey),
+    env.CACHE.get(momentKey),
+    env.CACHE.get(apodMetaKey),
+    env.CACHE.get("weather:60540:v2"),
+    env.CACHE.get("weather:60606:v2"),
+    env.CACHE.get("alerts:60540:v1"),
+    env.CACHE.get("alerts:60606:v1"),
+    env.CACHE.get(`device:${E1001_DEVICE_ID}:v1`),
+    env.CACHE.get(`device:${E1002_DEVICE_ID}:v1`),
+    env.CACHE.get(headlinesKey),
+  ]);
+
+  return jsonResponse(
+    {
+      status: "ok",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+      date_chicago: dateStr,
+      daily_images: {
+        fact4_gray:   { cached: fact4Raw !== null,       key: fact4Key },
+        fact1_1bit:   { cached: fact1Raw !== null,       key: fact1Key },
+        color_moment: { cached: colorMomentRaw !== null, key: colorMomentKey, style: colorStyle.id },
+        apod_color:   { cached: apodColorRaw !== null,   key: apodColorKey },
+        moment_event: { cached: momentRaw !== null,      key: momentKey },
+        apod_meta:    { cached: apodMetaRaw !== null,    key: apodMetaKey },
+      },
+      ephemeral: {
+        weather_home:   ephemeralStatus(parseEphemeral(weatherHomeRaw),   15),
+        weather_office: ephemeralStatus(parseEphemeral(weatherOfficeRaw), 15),
+        alerts_home:    ephemeralStatus(parseEphemeral(alertsHomeRaw),     5),
+        alerts_office:  ephemeralStatus(parseEphemeral(alertsOfficeRaw),   5),
+        device_home:    ephemeralStatus(parseEphemeral(deviceHomeRaw),     5),
+        device_office:  ephemeralStatus(parseEphemeral(deviceOfficeRaw),   5),
+        headlines:      ephemeralStatus(parseEphemeral(headlinesRaw),    360),
+      },
+      config: {
+        apod_api_key:  env.APOD_API_KEY  ? "configured" : "missing",
+        test_auth_key: env.TEST_AUTH_KEY ? "configured" : "missing",
+      },
+    },
+    200,
+    0
+  );
+}
+
 // --- Scheduled handler (Cron) ---
 
 async function handleScheduled(env: Env, cronExpression: string): Promise<void> {
@@ -457,6 +546,8 @@ export default {
         return handleColorHeadlinesPage(env, url);
       case "/health":
         return handleHealth();
+      case "/health-detailed":
+        return handleHealthDetailed(env);
       default:
         return jsonResponse(
           {
@@ -464,7 +555,7 @@ export default {
             endpoints: [
               "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
               "/color/weather", "/color/moment", "/color/apod", "/color/headlines",
-              "/test-birthday.png", "/health",
+              "/test-birthday.png", "/health", "/health-detailed",
             ],
           },
           404,
