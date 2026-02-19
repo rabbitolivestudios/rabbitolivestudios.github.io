@@ -16,7 +16,7 @@ import { getOrGenerateMoment, generateMomentBefore } from "../moment";
 import { getBirthdayToday, getBirthdayByKey, getArtStyle } from "../birthday";
 import type { BirthdayPerson } from "../birthday";
 import { callFluxPortrait, fetchReferencePhotos, ageDescription } from "../birthday-image";
-import { generateAndDecodeColorFlux, generateAndDecodeColor, centerCropRGB, resizeRGB } from "../image-color";
+import { generateAndDecodeColorFlux, generateAndDecodeColor } from "../image-color";
 import { decodePNG } from "../png-decode";
 import { ditherFloydSteinberg } from "../dither-spectra6";
 import { SPECTRA6_PALETTE } from "../spectra6";
@@ -105,16 +105,17 @@ export async function generateColorMoment(
   return { base64: pngToBase64(png), styleId: style.id };
 }
 
-/** Decode JPEG bytes to 800x480 RGB via Cloudflare Images. */
+/** Decode JPEG bytes to 800×480 RGB via Cloudflare Images (center-crop + resize). */
 async function jpegToRGB(env: Env, jpegBytes: Uint8Array): Promise<Uint8Array> {
-  const pngResponse = (await env.IMAGES.input(jpegBytes).output({ format: "image/png" })).response();
+  const pngResponse = (await env.IMAGES
+    .input(jpegBytes)
+    .transform({ width: WIDTH, height: HEIGHT, fit: "cover" })
+    .output({ format: "image/png" })
+  ).response();
   const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
   const decoded = await decodePNG(pngBytes);
   if (!decoded.rgb) throw new Error("Expected color PNG but got grayscale");
-  const cropped = centerCropRGB(decoded.rgb, decoded.width, decoded.height, WIDTH, HEIGHT);
-  return (cropped.width === WIDTH && cropped.height === HEIGHT)
-    ? cropped.rgb
-    : resizeRGB(cropped.rgb, cropped.width, cropped.height, WIDTH, HEIGHT);
+  return decoded.rgb;
 }
 
 /** Generate a color birthday portrait, returns base64 PNG. */
