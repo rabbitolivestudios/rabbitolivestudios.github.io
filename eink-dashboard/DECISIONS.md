@@ -863,3 +863,70 @@ Also clamped `.alert-banner` to single line (`white-space: nowrap; overflow: hid
 **`content:encoded` fallback:** Substack RSS uses thin `<description>` text; full article content is in `<content:encoded>`. Parser now falls back to `content:encoded` when `description` is <50 chars.
 
 **Cache key bumped:** `headlines:v1:` → `headlines:v2:`
+
+---
+
+## 31. World Skyline Series Replaces APOD (v3.10.0, 2026-02-24)
+
+### Decision: Replace NASA APOD with AI-generated world skylines
+
+**Problem:** NASA APOD photos produced heavy dot patterns after Floyd-Steinberg dithering to the 6-color Spectra palette. Even with saturation boost + contrast boost + posterization preprocessing, photographic images with smooth gradients and neutral tones created noisy dither artifacts on the E1002. The APOD pipeline also fetched external images of unpredictable size, which had caused Error 1102 (CPU limit) incidents.
+
+**Solution:** Replace APOD with a "World Skyline Series" — AI-generated city skyline illustrations using SDXL, optimized for e-ink readability. AI-generated images can be prompted for flat color regions and poster-like aesthetics, producing much cleaner dither results than photographs.
+
+**Three rotation modes (v3.10.0 update):**
+- `rotate` (default): city+style change every `rotateMin` minutes (default 15) via bucket hash — matches SenseCraft 15-min refresh
+- `daily`: one city+style per calendar day (seeded shuffle per year)
+- `random`: crypto-random each request, no cache
+- Bucket = `floor(Date.now()/60000 / rotateMin)` — deterministic, stable within each window
+- City seed: `djb2("dateStr|city|bucket")` — independent from style
+- Style seed: `djb2("dateStr|style|bucket")` — independent from city
+- **June 1 override (>= 2025):** Chicago, USA (anniversary special) — but style still follows normal rotation
+
+**City list:** 100 curated world cities in a static array.
+
+**Style rotation (18 styles, mixed BW + color):**
+- BW styles (9): woodcut, noir silhouette, pen & ink, pencil sketch, charcoal, linocut, etching, scratchboard, comic ink
+- Color styles (9): travel poster, WPA poster, minimal flat, art deco, screenprint, ukiyo-e, synthwave, mediterranean
+- BW output: 4-level grayscale PNG (same as Pipeline A)
+- Color output: Spectra 6 indexed PNG via Floyd-Steinberg dithering (same as color moment pipeline)
+
+**Prompt strategy:**
+- Base: city skyline from classic overlook, strong horizon, distinct outlines, large sky negative space
+- Lighting: sunset/daylight for color; clear daylight for BW — avoids noisy starfields
+- Atmosphere: ONE sun/moon disc, 2-4 bird silhouettes, 1-3 simple clouds
+- Anti-detail: avoid tiny windows, dense micro-detail, noisy textures, photographic realism
+- Color palette hint for color styles: "limited palette, large flat color regions, poster-like"
+
+**Caption format:** `{City} | World Skyline Series | {Mon DD, YYYY}`
+
+**Why SDXL (not FLUX.2) for skylines:**
+- SDXL produces more stable architectural silhouettes with SDXL's style control
+- Skylines don't need the fine detail where FLUX.2 excels
+- Simpler JSON API (no multipart FormData)
+
+**HTML wrappers use `<img src>` (not inline base64):**
+- `/skyline` serves HTML with `<img src="/skyline.png?...">` — SenseCraft re-fetches fresh each screenshot
+- HTML wrappers are always `Cache-Control: no-store` — the .png endpoint handles its own caching
+- `/skyline-test` forwards ALL query params to `/skyline-test.png`
+- This avoids the "stuck city" bug where inline base64 never changed
+
+**Endpoints:**
+- `/skyline` — HTML page (SenseCraft screenshot target, replaces `/color/apod` in E1002 page rotation)
+- `/skyline.png` — raw PNG (supports `?mode=rotate|daily|random&rotateMin=N`)
+- `/skyline-test` + `/skyline-test.png` — test with `?date=YYYY-MM-DD&city=...&style=...&color=0|1&mode=...`
+- `/color/apod` — 301 redirect to `/skyline` (legacy compatibility)
+
+**Cache key (v2):**
+- Rotate: `skyline:v2:YYYY-MM-DD:rN:bBUCKET` (TTL = rotateMin * 60, min 900s)
+- Daily: `skyline:v2:YYYY-MM-DD:daily` (TTL = 24h)
+- Random: no KV cache, no-store
+
+**Cron:** Daily warm generates and caches the current rotation bucket alongside other daily images.
+
+**What was removed:**
+- `handleColorAPODPage` import and direct route handler
+- APOD cron warm (`getAPODData` + `getAPODColorImage`)
+- `APOD_API_KEY` from health-detailed config check
+- APOD entries from health-detailed daily_images
+- Note: `src/apod.ts` and `src/pages/color-apod.ts` files are kept for now (dead code, can be cleaned up later)

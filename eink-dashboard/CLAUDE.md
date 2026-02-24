@@ -78,7 +78,8 @@ curl http://localhost:8790/color/weather?test-device
 curl http://localhost:8790/color/weather?test-device&test-alert=tornado
 curl http://localhost:8790/color/headlines?test-headlines
 curl "http://localhost:8790/color/test-moment?m=7&d=20"
-curl http://localhost:8790/color/apod
+curl http://localhost:8790/skyline
+curl "http://localhost:8790/skyline-test?date=2026-06-01"
 ```
 
 Always build before committing. Do not commit code that doesn't compile.
@@ -89,13 +90,13 @@ Always build before committing. Do not commit code that doesn't compile.
 
 This project has independent image pipelines. They share the LLM event selection (via `getOrGenerateMoment`) but diverge at style injection, image model, and post-processing. Changes to one pipeline must not affect the others.
 
-| | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) | Pipeline D (`/color/moment`) |
-|---|---|---|---|
-| Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) |
-| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | 5-style rotation (gouache/oil/graphic/ink/woodblock) |
-| Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) |
-| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` |
-| Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) |
+| | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) | Pipeline D (`/color/moment`) | Pipeline E (`/skyline`) |
+|---|---|---|---|---|
+| Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) | SDXL |
+| Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | 5-style rotation (gouache/oil/graphic/ink/woodblock) | 8-style rotation (5 BW + 3 color) |
+| Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) | BW: 4-level gray / Color: Spectra 6 |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` | `skyline:v1:YYYY-MM-DD` |
+| Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) | E1002 (Spectra 6) |
 
 ---
 
@@ -279,7 +280,9 @@ eink-dashboard/
     response.ts           — htmlResponse() with security headers
     weather-ui.ts         — Shared weather page helpers (formatDate, formatTime, icon, etc.)
     headlines.ts          — Steel/trade RSS + LLM summarizer
-    apod.ts               — NASA APOD fetcher + Spectra 6 image processor
+    skyline.ts            — World Skyline Series: city/style selection, prompt building
+    skyline-image.ts      — Skyline image generation (SDXL) + BW/color post-processing
+    apod.ts               — NASA APOD fetcher (legacy, unused since v3.10.0)
     spectra6.ts           — Spectra 6 palette constants + CSS variables
     dither-spectra6.ts    — Floyd-Steinberg dithering engine
     png.ts                — Pure JS PNG encoder (8-bit, 1-bit, indexed) + pngToBase64()
@@ -290,8 +293,9 @@ eink-dashboard/
       fact.ts             — /fact HTML wrapper for fact.png
       color-weather.ts    — /color/weather HTML page (E1002 Spectra 6)
       color-moment.ts     — /color/moment + color birthday + test endpoints
-      color-apod.ts       — /color/apod HTML page
+      color-apod.ts       — /color/apod HTML page (legacy, redirects to /skyline)
       color-headlines.ts  — /color/headlines HTML page
+      skyline.ts          — /skyline + /skyline-test HTML pages
   photos/                 — Birthday reference photos source
   scripts/                — Upload scripts
   CLAUDE.md               — This file

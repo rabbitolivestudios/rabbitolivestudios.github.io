@@ -7,8 +7,8 @@ import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
 import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday, generateColorMoment, getColorMomentStyle } from "./pages/color-moment";
-import { handleColorAPODPage } from "./pages/color-apod";
 import { handleColorHeadlinesPage } from "./pages/color-headlines";
+import { skylinePageResponse, skylineTestPageResponse } from "./pages/skyline";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
@@ -16,10 +16,22 @@ import { fetchWithTimeout } from "./fetch-timeout";
 import { getChicagoDateParts } from "./date-utils";
 import { parseMonth, parseDay, parseStyleIdx } from "./validate";
 import { getHeadlines, getCurrentPeriod } from "./headlines";
-import { getAPODData, getAPODColorImage } from "./apod";
 import { pngToBase64 } from "./png";
+import {
+  parseDateParts,
+  pickSkylineCity,
+  pickSkylineStyle,
+  buildSkylinePrompt,
+  formatSkylineCaption,
+  findSkylineStyleByKey,
+  computeBucket,
+  DEFAULT_MODE,
+  DEFAULT_ROTATE_MIN,
+} from "./skyline";
+import type { SkylineColorMode, SkylineMode, SkylinePickerOpts } from "./skyline";
+import { generateSkylineImage } from "./skyline-image";
 
-const VERSION = "3.9.0";
+const VERSION = "3.10.0";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -184,6 +196,120 @@ async function handleFact1BitImage(env: Env): Promise<Response> {
   }
 }
 
+// --- Skyline helpers ---
+
+function parseSkylineMode(raw: string | null): SkylineMode {
+  if (raw === "daily" || raw === "random" || raw === "rotate") return raw;
+  return DEFAULT_MODE;
+}
+
+function parseSkylineRotateMin(raw: string | null): number {
+  if (!raw) return DEFAULT_ROTATE_MIN;
+  const n = parseInt(raw, 10);
+  if (isNaN(n) || n < 1) return DEFAULT_ROTATE_MIN;
+  return Math.min(n, 1440); // cap at 24h
+}
+
+// --- Skyline handlers ---
+
+async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
+  const { dateStr } = getChicagoDateParts();
+  const mode = parseSkylineMode(url.searchParams.get("mode"));
+  const rotateMin = parseSkylineRotateMin(url.searchParams.get("rotateMin"));
+  const bucket = computeBucket(rotateMin);
+  const opts: SkylinePickerOpts = { mode, rotateMin, bucket };
+
+  // mode=random → no cache
+  if (mode === "random") {
+    try {
+      const parts = parseDateParts(dateStr);
+      const city = pickSkylineCity(parts, opts);
+      const style = pickSkylineStyle(parts, opts);
+      const prompt = buildSkylinePrompt(city, style);
+      const caption = formatSkylineCaption(city, parts.displayDate);
+      console.log(`Skyline random: ${city} | ${style.label} (${style.colorMode})`);
+      const result = await generateSkylineImage(env, prompt, caption, style.colorMode);
+      return new Response(result.png, {
+        headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+      });
+    } catch (err) {
+      console.error("Skyline random error:", err);
+      return new Response("Failed to generate skyline image", { status: 503 });
+    }
+  }
+
+  // mode=rotate or daily → KV cached
+  const cacheKey = mode === "rotate"
+    ? `skyline:v2:${dateStr}:r${rotateMin}:b${bucket}`
+    : `skyline:v2:${dateStr}:daily`;
+  const ttl = mode === "rotate" ? rotateMin * 60 : 86400;
+  const maxAge = mode === "rotate" ? rotateMin * 60 : 86400;
+
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    console.log(`skyline.png: cache hit (${mode}, bucket=${bucket})`);
+    try {
+      const binary = Uint8Array.from(atob(cached), (c) => c.charCodeAt(0));
+      return new Response(binary, {
+        headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}`, "Access-Control-Allow-Origin": "*" },
+      });
+    } catch { /* cache corrupted, regenerate */ }
+  }
+
+  try {
+    const parts = parseDateParts(dateStr);
+    const city = pickSkylineCity(parts, opts);
+    const style = pickSkylineStyle(parts, opts);
+    const prompt = buildSkylinePrompt(city, style);
+    const caption = formatSkylineCaption(city, parts.displayDate);
+    console.log(`Skyline ${mode}: ${city} | ${style.label} (${style.colorMode}) | bucket=${bucket}`);
+
+    const result = await generateSkylineImage(env, prompt, caption, style.colorMode);
+    await env.CACHE.put(cacheKey, result.base64, { expirationTtl: Math.max(ttl, 900) });
+
+    return new Response(result.png, {
+      headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}`, "Access-Control-Allow-Origin": "*" },
+    });
+  } catch (err) {
+    console.error("Skyline image error:", err);
+    return new Response("Failed to generate skyline image", { status: 503 });
+  }
+}
+
+function handleSkylinePage(url: URL): Response {
+  return skylinePageResponse(url.search.replace(/^\?/, ""));
+}
+
+async function handleSkylineTestPng(env: Env, url: URL): Promise<Response> {
+  const dateParam = url.searchParams.get("date") ?? getChicagoDateParts().dateStr;
+  const parts = parseDateParts(dateParam);
+  const mode = parseSkylineMode(url.searchParams.get("mode"));
+  const rotateMin = parseSkylineRotateMin(url.searchParams.get("rotateMin"));
+  const bucket = computeBucket(rotateMin);
+  const opts: SkylinePickerOpts = { mode, rotateMin, bucket };
+
+  const cityOverride = url.searchParams.get("city");
+  const styleOverride = url.searchParams.get("style");
+  const colorOverride = url.searchParams.get("color");
+
+  const city = cityOverride ?? pickSkylineCity(parts, opts);
+  const style = (styleOverride ? findSkylineStyleByKey(styleOverride) : null) ?? pickSkylineStyle(parts, opts);
+  const colorMode: SkylineColorMode = colorOverride === "1" ? "color" : colorOverride === "0" ? "bw" : style.colorMode;
+
+  const prompt = buildSkylinePrompt(city, { ...style, colorMode });
+  const caption = formatSkylineCaption(city, parts.displayDate);
+  console.log(`Skyline test: ${city} | ${style.label} (${colorMode}) | ${parts.dateStr} | mode=${mode}`);
+
+  const result = await generateSkylineImage(env, prompt, caption, colorMode);
+  return new Response(result.png, {
+    headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" },
+  });
+}
+
+function handleSkylineTestPage(url: URL): Response {
+  return skylineTestPageResponse(url.search.replace(/^\?/, ""));
+}
+
 function handleHealth(): Response {
   return jsonResponse(
     {
@@ -226,14 +352,14 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
   const fact4Key = birthday ? `birthday:v1:${dateStr}` : `fact4:v4:${dateStr}`;
   const fact1Key = `fact1:v7:${dateStr}`;
   const colorMomentKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
-  const apodColorKey = `apod-color:v1:${dateStr}`;
+  const skylineBucket = computeBucket(DEFAULT_ROTATE_MIN);
+  const skylineKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${skylineBucket}`;
   const momentKey = `moment:v1:${dateStr}`;
-  const apodMetaKey = `apod:v1:${dateStr}`;
   const headlinesKey = `headlines:v1:${dateStr}:${period}`;
 
   // Fetch all keys in parallel
   const [
-    fact4Raw, fact1Raw, colorMomentRaw, apodColorRaw, momentRaw, apodMetaRaw,
+    fact4Raw, fact1Raw, colorMomentRaw, skylineRaw, momentRaw,
     weatherHomeRaw, weatherOfficeRaw,
     alertsHomeRaw, alertsOfficeRaw,
     deviceHomeRaw, deviceOfficeRaw,
@@ -242,9 +368,8 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
     env.CACHE.get(fact4Key),
     env.CACHE.get(fact1Key),
     env.CACHE.get(colorMomentKey),
-    env.CACHE.get(apodColorKey),
+    env.CACHE.get(skylineKey),
     env.CACHE.get(momentKey),
-    env.CACHE.get(apodMetaKey),
     env.CACHE.get("weather:60540:v2"),
     env.CACHE.get("weather:60606:v2"),
     env.CACHE.get("alerts:60540:v1"),
@@ -264,9 +389,8 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
         fact4_gray:   { cached: fact4Raw !== null,       key: fact4Key },
         fact1_1bit:   { cached: fact1Raw !== null,       key: fact1Key },
         color_moment: { cached: colorMomentRaw !== null, key: colorMomentKey, style: colorStyle.id },
-        apod_color:   { cached: apodColorRaw !== null,   key: apodColorKey },
+        skyline:      { cached: skylineRaw !== null,     key: skylineKey },
         moment_event: { cached: momentRaw !== null,      key: momentKey },
-        apod_meta:    { cached: apodMetaRaw !== null,    key: apodMetaKey },
       },
       ephemeral: {
         weather_home:   ephemeralStatus(parseEphemeral(weatherHomeRaw),   15),
@@ -278,7 +402,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
         headlines:      ephemeralStatus(parseEphemeral(headlinesRaw),    360),
       },
       config: {
-        apod_api_key:  env.APOD_API_KEY  ? "configured" : "missing",
         test_auth_key: env.TEST_AUTH_KEY ? "configured" : "missing",
       },
     },
@@ -316,7 +439,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     }
     console.log("Cron: warmed 6h data (headlines, weather, devices)");
 
-    // --- Daily only: images + APOD ---
+    // --- Daily only: images + skyline ---
     if (!isDaily) return;
 
     // Shared dependencies: events + moment (needed by all image pipelines)
@@ -382,14 +505,27 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
       })());
     }
 
-    // APOD (independent)
+    // Skyline — warm the current rotation bucket
     tasks.push((async () => {
       try {
-        await getAPODData(env, dateStr);
-        await getAPODColorImage(env, dateStr);
-        console.log("Cron: warmed APOD data + color image");
+        const skylineBucket = computeBucket(DEFAULT_ROTATE_MIN);
+        const skylineCacheKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${skylineBucket}`;
+        const existingSkyline = await env.CACHE.get(skylineCacheKey);
+        if (!existingSkyline) {
+          const skylineParts = parseDateParts(dateStr);
+          const skylineOpts: SkylinePickerOpts = { mode: "rotate", rotateMin: DEFAULT_ROTATE_MIN, bucket: skylineBucket };
+          const skylineCity = pickSkylineCity(skylineParts, skylineOpts);
+          const skylineStyle = pickSkylineStyle(skylineParts, skylineOpts);
+          const skylinePrompt = buildSkylinePrompt(skylineCity, skylineStyle);
+          const skylineCaption = formatSkylineCaption(skylineCity, skylineParts.displayDate);
+          const skylineResult = await generateSkylineImage(env, skylinePrompt, skylineCaption, skylineStyle.colorMode);
+          await env.CACHE.put(skylineCacheKey, skylineResult.base64, { expirationTtl: Math.max(DEFAULT_ROTATE_MIN * 60, 900) });
+          console.log(`Cron: cached skyline (${skylineCity}, ${skylineStyle.label}) bucket=${skylineBucket}`);
+        } else {
+          console.log(`Cron: skyline already cached for bucket=${skylineBucket}`);
+        }
       } catch (err) {
-        console.error("Cron: APOD warm failed:", err);
+        console.error("Cron: skyline warm failed:", err);
       }
     })());
 
@@ -541,9 +677,24 @@ export default {
         return handleColorTestBirthday(env, url);
       }
       case "/color/apod":
-        return handleColorAPODPage(env, url);
+        // Redirect legacy APOD route to skyline
+        return Response.redirect(new URL("/skyline", url).href, 301);
       case "/color/headlines":
         return handleColorHeadlinesPage(env, url);
+      case "/skyline.png":
+        return handleSkylinePng(env, url);
+      case "/skyline":
+        return handleSkylinePage(url);
+      case "/skyline-test.png": {
+        const authBlockST = checkTestAuth(url, env);
+        if (authBlockST) return authBlockST;
+        return handleSkylineTestPng(env, url);
+      }
+      case "/skyline-test": {
+        const authBlockSTP = checkTestAuth(url, env);
+        if (authBlockSTP) return authBlockSTP;
+        return handleSkylineTestPage(url);
+      }
       case "/health":
         return handleHealth();
       case "/health-detailed":
@@ -554,7 +705,8 @@ export default {
             error: "Not found",
             endpoints: [
               "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
-              "/color/weather", "/color/moment", "/color/apod", "/color/headlines",
+              "/color/weather", "/color/moment", "/color/headlines",
+              "/skyline", "/skyline.png",
               "/test-birthday.png", "/health", "/health-detailed",
             ],
           },

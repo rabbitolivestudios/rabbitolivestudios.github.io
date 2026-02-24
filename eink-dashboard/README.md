@@ -34,11 +34,16 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | **E1002 Color Endpoints** | | |
 | `GET /color/weather` | 800x480 color HTML weather dashboard (Spectra 6 palette accents) | 30 min |
 | `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
-| `GET /color/apod` | 800x480 color NASA APOD image (dithered to 6 colors) | 24 hours |
 | `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
 | `GET /color/test-moment?m=MM&d=DD&style=ID&key=KEY` | Generate color moment for any date + optional style override (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/test-birthday?name=KEY&style=N&key=KEY` | Generate color birthday portrait (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
+| **World Skyline Series** | | |
+| `GET /skyline` | 800x480 HTML skyline page (`<img src="/skyline.png">`, always no-store) | none |
+| `GET /skyline.png?mode=rotate\|daily\|random&rotateMin=N` | 800x480 skyline PNG (default: rotate every 15 min) | 15 min bucket |
+| `GET /skyline-test?date=...&city=...&style=...&color=0\|1&mode=...&key=KEY` | Test skyline HTML (forwards params to .png, requires `TEST_AUTH_KEY`) | none |
+| `GET /skyline-test.png?date=...&city=...&style=...&color=0\|1&mode=...&key=KEY` | Test skyline PNG with overrides (requires `TEST_AUTH_KEY`) | none |
+| `GET /color/apod` | Redirects to `/skyline` (legacy) | — |
 | `GET /health` | Status check | none |
 
 ## Live URL
@@ -92,12 +97,10 @@ Your worker URL will be printed. The cron runs daily at 06:05 UTC (images) and e
 ### Step 5: Set Secrets (Optional)
 
 ```bash
-npx wrangler secret put APOD_API_KEY
 npx wrangler secret put TEST_AUTH_KEY
 ```
 
-- **APOD_API_KEY**: Get a free key from [api.nasa.gov](https://api.nasa.gov). Falls back to `DEMO_KEY` (rate limited).
-- **TEST_AUTH_KEY**: Protects expensive test endpoints (`/test.png`, `/test1.png`, `/test-birthday.png`, `/color/test-moment`, `/color/test-birthday`) from public abuse. When set, these routes require `?key=YOUR_KEY`. When not set (local dev), test routes work without auth.
+- **TEST_AUTH_KEY**: Protects expensive test endpoints (`/test.png`, `/test1.png`, `/test-birthday.png`, `/color/test-moment`, `/color/test-birthday`, `/skyline-test.png`, `/skyline-test`) from public abuse. When set, these routes require `?key=YOUR_KEY`. When not set (local dev), test routes work without auth.
 
 ### Step 5: Test
 
@@ -284,15 +287,12 @@ KV cache (24h)
 └─────────────┘     │  │ (resize+convert│  │────▶│  NWS API      │
                      │  ├────────────────┤  │     │  (alerts)     │
                      │  │ KV Cache       │  │     └──────────────┘
-                     │  │ (24h/6h TTL)   │  │     ┌──────────────┐
-                     │  ├────────────────┤  │────▶│  NASA APOD    │
-                     │  │ R2 Bucket      │  │     │  (astronomy)  │
-                     │  │ (photos)       │  │     └──────────────┘
-                     │  └────────────────┘  │     ┌──────────────┐
-                     └──────────────────────┘────▶│  Google News  │
-                                                  │  + Fed Register│
-                                                  │  (headlines)  │
-                                                  └──────────────┘
+                     │  │ (24h/6h TTL)   │  │
+                     │  ├────────────────┤  │     ┌──────────────┐
+                     │  │ R2 Bucket      │  │────▶│  Google News  │
+                     │  │ (photos)       │  │     │  (headlines)  │
+                     │  └────────────────┘  │     └──────────────┘
+                     └──────────────────────┘
 ```
 
 ### Cloudflare Bindings
@@ -303,7 +303,6 @@ KV cache (24h)
 | `env.IMAGES` | Cloudflare Images | Format conversion + center-crop/resize to 800×480 via `.transform()` |
 | `env.CACHE` | KV Namespace | Response caching (24h/6h) |
 | `env.PHOTOS` | R2 Bucket | Birthday reference photos |
-| `env.APOD_API_KEY` | Secret | NASA APOD API key (optional, falls back to DEMO_KEY) |
 | `env.TEST_AUTH_KEY` | Secret | Auth key for expensive test endpoints (optional, open in dev) |
 
 ### SenseCraft API-Key Note
