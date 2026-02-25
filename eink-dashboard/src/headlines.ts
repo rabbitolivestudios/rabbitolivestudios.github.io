@@ -88,7 +88,7 @@ function parseSteelOrbisItems(html: string): RawItem[] {
   const aMatches = html.match(/<a[^>]+href="(\/steel-news\/latest-news\/[^"]+\.htm)"[^>]*>([\s\S]*?)<\/a>/gi) ?? [];
   for (const match of aMatches) {
     const href = match.match(/href="([^"]+)"/i)?.[1] ?? "";
-    const rawDate = (match.match(/<div[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "").trim();
+    const rawDate = (match.match(/<div[^>]*article-date[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "").trim();
     // SteelOrbis uses "25 Feb" (no year) — append current year for valid Date parsing
     const date = rawDate && !rawDate.match(/\d{4}/) ? `${rawDate} ${currentYear}` : rawDate;
     const titleRaw = stripTags(match.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1] ?? "").trim();
@@ -263,7 +263,7 @@ export async function getHeadlines(
   dateStr: string,
   period: number,
 ): Promise<Headline[]> {
-  const cacheKey = `headlines:v2:${dateStr}:${period}`;
+  const cacheKey = `headlines:v3:${dateStr}:${period}`;
 
   const cached = await env.CACHE.get<CachedValue<Headline[]>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
