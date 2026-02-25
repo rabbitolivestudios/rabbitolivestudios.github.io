@@ -377,7 +377,7 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
   const skylineBucket = computeBucket(DEFAULT_ROTATE_MIN);
   const skylineKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${skylineBucket}`;
   const momentKey = `moment:v1:${dateStr}`;
-  const headlinesKey = `headlines:v1:${dateStr}:${period}`;
+  const headlinesKey = `headlines:v3:${dateStr}:${period}`;
 
   // Fetch all keys in parallel
   const [

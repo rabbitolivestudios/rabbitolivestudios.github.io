@@ -930,3 +930,21 @@ Also clamped `.alert-banner` to single line (`white-space: nowrap; overflow: hid
 - `APOD_API_KEY` from health-detailed config check
 - APOD entries from health-detailed daily_images
 - **v3.10.1 cleanup:** Deleted `src/apod.ts` and `src/pages/color-apod.ts`. Removed `APODData` type and `APOD_API_KEY` from `Env`. Removed APOD_API_KEY comment from `wrangler.toml`. The `/color/apod` → `/skyline` 301 redirect is kept for device compatibility.
+
+---
+
+## 32. SteelOrbis Date Parsing Fix (2026-02-25)
+
+### Decision: Fix date scraping regex + append year to yearless dates
+
+**Problem:** Headlines page showed "Invalid Date" next to SteelOrbis articles. Two stacked issues:
+
+1. **Wrong div matched:** The date regex `/<div[^>]*>([\s\S]*?)<\/div>/` matched the outer wrapper div (which contains nested HTML) instead of the inner `article-date-body` div. Captured text included HTML tags, not the date string.
+2. **No year in date:** SteelOrbis dates are `"25 Feb"` (day + month, no year). `new Date("25 Feb")` returns `Invalid Date` without throwing, so the `catch` block in `formatTimestamp` never fired.
+
+**Fixes:**
+- Narrowed scraper regex to `/<div[^>]*article-date[^>]*>([\s\S]*?)<\/div>/` — targets the date div specifically
+- Append current year when date string lacks a 4-digit year: `"25 Feb"` → `"25 Feb 2026"`
+- Added `isNaN(d.getTime())` guard in `formatTimestamp` as defense-in-depth
+
+**Cache key bumped:** `headlines:v2:` → `headlines:v3:` to flush stale entries with empty dates.
