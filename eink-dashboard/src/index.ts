@@ -8,7 +8,7 @@ import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
 import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday, generateColorMoment, getColorMomentStyle } from "./pages/color-moment";
 import { handleColorHeadlinesPage } from "./pages/color-headlines";
-import { skylinePageResponse, skylineTestPageResponse } from "./pages/skyline";
+import { skylinePageResponse, skylineTestPageResponse, skylineBwPageResponse } from "./pages/skyline";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
 import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
@@ -31,7 +31,7 @@ import {
 import type { SkylineColorMode, SkylineMode, SkylinePickerOpts } from "./skyline";
 import { generateSkylineImage } from "./skyline-image";
 
-const VERSION = "3.10.0";
+const VERSION = "3.11.0";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -234,7 +234,9 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   const mode = parseSkylineMode(url.searchParams.get("mode"));
   const rotateMin = parseSkylineRotateMin(url.searchParams.get("rotateMin"));
   const bucket = computeBucket(rotateMin);
-  const opts: SkylinePickerOpts = { mode, rotateMin, bucket };
+  const bwOnly = url.searchParams.get("bw") === "1";
+  const colorModeFilter = bwOnly ? "bw" as const : undefined;
+  const opts: SkylinePickerOpts = { mode, rotateMin, bucket, colorModeFilter };
 
   // Resolve city + style (needed for debug headers even on cache hit)
   const parts = parseDateParts(dateStr);
@@ -259,9 +261,10 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   }
 
   // mode=rotate or daily → KV cached
+  const bwSuffix = bwOnly ? ":bw" : "";
   const cacheKey = mode === "rotate"
-    ? `skyline:v2:${dateStr}:r${rotateMin}:b${bucket}`
-    : `skyline:v2:${dateStr}:daily`;
+    ? `skyline:v2:${dateStr}:r${rotateMin}:b${bucket}${bwSuffix}`
+    : `skyline:v2:${dateStr}:daily${bwSuffix}`;
   const ttl = mode === "rotate" ? rotateMin * 60 : 86400;
   const maxAge = mode === "rotate" ? rotateMin * 60 : 86400;
 
@@ -376,12 +379,13 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
   const colorMomentKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
   const skylineBucket = computeBucket(DEFAULT_ROTATE_MIN);
   const skylineKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${skylineBucket}`;
+  const skylineBwKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${skylineBucket}:bw`;
   const momentKey = `moment:v1:${dateStr}`;
   const headlinesKey = `headlines:v3:${dateStr}:${period}`;
 
   // Fetch all keys in parallel
   const [
-    fact4Raw, fact1Raw, colorMomentRaw, skylineRaw, momentRaw,
+    fact4Raw, fact1Raw, colorMomentRaw, skylineRaw, skylineBwRaw, momentRaw,
     weatherHomeRaw, weatherOfficeRaw,
     alertsHomeRaw, alertsOfficeRaw,
     deviceHomeRaw, deviceOfficeRaw,
@@ -391,6 +395,7 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
     env.CACHE.get(fact1Key),
     env.CACHE.get(colorMomentKey),
     env.CACHE.get(skylineKey),
+    env.CACHE.get(skylineBwKey),
     env.CACHE.get(momentKey),
     env.CACHE.get("weather:60540:v2"),
     env.CACHE.get("weather:60606:v2"),
@@ -412,6 +417,7 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
         fact1_1bit:   { cached: fact1Raw !== null,       key: fact1Key },
         color_moment: { cached: colorMomentRaw !== null, key: colorMomentKey, style: colorStyle.id },
         skyline:      { cached: skylineRaw !== null,     key: skylineKey },
+        skyline_bw:   { cached: skylineBwRaw !== null,   key: skylineBwKey },
         moment_event: { cached: momentRaw !== null,      key: momentKey },
       },
       ephemeral: {
@@ -548,6 +554,30 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
         }
       } catch (err) {
         console.error("Cron: skyline warm failed:", err);
+      }
+    })());
+
+    // Skyline BW — warm the current rotation bucket (BW styles only)
+    tasks.push((async () => {
+      try {
+        const bwBucket = computeBucket(DEFAULT_ROTATE_MIN);
+        const bwCacheKey = `skyline:v2:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${bwBucket}:bw`;
+        const existingBw = await env.CACHE.get(bwCacheKey);
+        if (!existingBw) {
+          const bwParts = parseDateParts(dateStr);
+          const bwOpts: SkylinePickerOpts = { mode: "rotate", rotateMin: DEFAULT_ROTATE_MIN, bucket: bwBucket, colorModeFilter: "bw" };
+          const bwCity = pickSkylineCity(bwParts, bwOpts);
+          const bwStyle = pickSkylineStyle(bwParts, bwOpts);
+          const bwPrompt = buildSkylinePrompt(bwCity, bwStyle);
+          const bwCaption = formatSkylineCaption(bwCity, bwParts.displayDate);
+          const bwResult = await generateSkylineImage(env, bwPrompt, bwCaption, bwStyle.colorMode);
+          await env.CACHE.put(bwCacheKey, bwResult.base64, { expirationTtl: Math.max(DEFAULT_ROTATE_MIN * 60, 900) });
+          console.log(`Cron: cached skyline BW (${bwCity}, ${bwStyle.label}) bucket=${bwBucket}`);
+        } else {
+          console.log(`Cron: skyline BW already cached for bucket=${bwBucket}`);
+        }
+      } catch (err) {
+        console.error("Cron: skyline BW warm failed:", err);
       }
     })());
 
@@ -707,6 +737,8 @@ export default {
         return handleSkylinePng(env, url);
       case "/skyline":
         return handleSkylinePage(url);
+      case "/skyline-bw":
+        return skylineBwPageResponse();
       case "/skyline-test.png": {
         const authBlockST = checkTestAuth(url, env);
         if (authBlockST) return authBlockST;
@@ -728,7 +760,7 @@ export default {
             endpoints: [
               "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
               "/color/weather", "/color/moment", "/color/headlines",
-              "/skyline", "/skyline.png",
+              "/skyline", "/skyline-bw", "/skyline.png",
               "/test-birthday.png", "/health", "/health-detailed",
             ],
           },

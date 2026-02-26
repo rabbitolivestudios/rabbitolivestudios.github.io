@@ -47,3 +47,28 @@ export function skylineTestPageResponse(queryString: string): Response {
   const html = renderSkylineHTML("/skyline-test.png", queryString);
   return htmlResponse(html, "no-store");
 }
+
+/**
+ * Serve /skyline-bw — BW-only skyline for E1001 mono display.
+ * Always passes bw=1 to restrict to grayscale styles.
+ * No Spectra6 CSS needed (mono pipeline).
+ */
+export function skylineBwPageResponse(): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800">
+<title>World Skyline Series</title>
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #fff; }
+  img { display: block; width: 800px; height: 480px; object-fit: cover; }
+</style>
+</head>
+<body>
+  <img src="/skyline.png?bw=1" width="800" height="480" alt="World Skyline Series">
+</body>
+</html>`;
+  return htmlResponse(html, "no-store");
+}

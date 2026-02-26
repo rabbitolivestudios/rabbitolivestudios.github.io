@@ -332,6 +332,7 @@ export interface SkylinePickerOpts {
   mode: SkylineMode;
   rotateMin: number;
   bucket: number; // pre-computed bucket for rotate mode
+  colorModeFilter?: "bw" | "color"; // restrict style pool (undefined = all styles)
 }
 
 /** Compute the current rotation bucket (minutes since epoch / rotateMin). */
@@ -368,22 +369,26 @@ export function pickSkylineCity(parts: SkylineDateParts, opts: SkylinePickerOpts
 
 // --- Style picker (style rotation still applies on June 1) ---
 export function pickSkylineStyle(parts: SkylineDateParts, opts: SkylinePickerOpts): SkylineStyle {
+  const pool: readonly SkylineStyle[] = opts.colorModeFilter
+    ? SKYLINE_STYLES.filter((s) => s.colorMode === opts.colorModeFilter)
+    : SKYLINE_STYLES;
+
   if (opts.mode === "random") {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
-    return SKYLINE_STYLES[buf[0] % SKYLINE_STYLES.length];
+    return pool[buf[0] % pool.length];
   }
 
   if (opts.mode === "rotate") {
     // Independent seed from city ("|style|" vs "|city|")
     const seed = djb2(`${parts.dateStr}|style|${opts.bucket}`);
-    const shuffled = shuffleSeeded(SKYLINE_STYLES, seed);
+    const shuffled = shuffleSeeded(pool, seed);
     return shuffled[0];
   }
 
   // mode === "daily"
   const seed = djb2(`${parts.year}|skyline-styles`);
-  const shuffled = shuffleSeeded(SKYLINE_STYLES, seed);
+  const shuffled = shuffleSeeded(pool, seed);
   const idx = (parts.dayOfYear - 1) % shuffled.length;
   return shuffled[idx];
 }

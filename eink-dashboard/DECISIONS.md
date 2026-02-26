@@ -948,3 +948,25 @@ Also clamped `.alert-banner` to single line (`white-space: nowrap; overflow: hid
 - Added `isNaN(d.getTime())` guard in `formatTimestamp` as defense-in-depth
 
 **Cache key bumped:** `headlines:v2:` → `headlines:v3:` to flush stale entries with empty dates.
+
+---
+
+## 33. BW-Only Skyline for E1001 Mono Display (v3.11.0, 2026-02-25)
+
+### Decision: `bw=1` query param on `/skyline.png` + `/skyline-bw` HTML wrapper
+
+**Problem:** The World Skyline Series (`/skyline`) rotates across all 18 styles (9 BW + 9 color). The E1002 color display handles both, but E1001 (mono) can only display BW styles. Adding E1001 to the skyline rotation required restricting to BW-only styles.
+
+**Options considered:**
+| Option | Approach | Tradeoff |
+|--------|----------|----------|
+| A. Separate `/skyline-bw.png` endpoint | Full new handler | Code duplication, separate maintenance |
+| B. Hardcode style list in a second handler | Brittle, diverges from source of truth | |
+| **C. `bw=1` param + `colorModeFilter` in picker** | **Single handler, filter at style selection** | **Minimal code, clean separation** |
+
+**Chose Option C** because:
+- `pickSkylineStyle()` already knows about `colorMode` on each style
+- Adding `colorModeFilter?: "bw" | "color"` to `SkylinePickerOpts` is minimal and backwards-compatible
+- Cache key gets `:bw` suffix → fully independent cache namespace
+- `/skyline-bw` is a thin HTML wrapper (like `/fact`) pointing to `/skyline.png?bw=1`
+- Cron warms both BW and mixed skyline buckets independently
