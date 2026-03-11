@@ -6,6 +6,7 @@
  */
 
 import type { DailyEntry, WeatherResponse } from "./types";
+import { getMoonPhase, moonSVG } from "./moon";
 
 /** Render an inline SVG icon from an icon map. */
 export function icon(icons: Record<string, string>, key: string, size: number): string {
@@ -51,6 +52,27 @@ export function formatDailyPrecip(d: DailyEntry): string {
   }
   if (d.precip_prob_pct > 0) return `${d.precip_prob_pct}% rain`;
   return "";
+}
+
+/**
+ * Render moon phase HTML fragment: icon + phase name.
+ * @param litColor Fill color for the illuminated surface
+ * @param shadowColor Fill color for the shadow
+ * @param size Icon size in pixels
+ * @param date Date to compute phase for (defaults to now)
+ * @param overrideIndex Optional phase index override for testing (0-7)
+ */
+export function moonPhaseHTML(
+  litColor: string, shadowColor: string, size: number,
+  date: Date = new Date(), overrideIndex?: number,
+): string {
+  const phase = getMoonPhase(date);
+  const idx = overrideIndex !== undefined ? Math.max(0, Math.min(7, overrideIndex)) : phase.index;
+  const name = overrideIndex !== undefined
+    ? ["New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous", "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent"][idx]
+    : phase.name;
+  const svg = moonSVG(idx, litColor, shadowColor);
+  return `<span style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle">${svg}</span> ${name}`;
 }
 
 /** Check for imminent rain based on 15-min and hourly data. */

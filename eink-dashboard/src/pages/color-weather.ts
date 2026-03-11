@@ -13,7 +13,7 @@ import { getWeatherForLocation } from "../weather";
 import { fetchDeviceData, E1002_DEVICE_ID } from "../device";
 import { spectra6CSS } from "../spectra6";
 import { escapeHTML } from "../escape";
-import { icon as sharedIcon, formatDate, formatTime, formatSunTime, formatDailyPrecip, getRainWarning } from "../weather-ui";
+import { icon as sharedIcon, formatDate, formatTime, formatSunTime, formatDailyPrecip, getRainWarning, moonPhaseHTML } from "../weather-ui";
 
 // E1002 is at the office — Chicago Loop (60606)
 const OFFICE_LAT = 41.8781;
@@ -135,7 +135,7 @@ function tempColor(tempC: number): string {
   return "var(--s6-red)";
 }
 
-function renderHTML(w: WeatherResponse, device: DeviceData | null = null): string {
+function renderHTML(w: WeatherResponse, device: DeviceData | null = null, moonOverride?: number): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric",
@@ -153,8 +153,10 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   if (cur.wind_gusts_kmh > cur.wind_kmh + 10) windStr += `-${cur.wind_gusts_kmh}`;
   windStr += " km/h";
 
+  // Moon phase — yellow lit surface on color display
+  const moonStr = moonPhaseHTML("rgb(239,222,68)", "#000", 22, now, moonOverride);
   const sunLine = w.sunrise && w.sunset
-    ? `<div class="cur-sun">${ic("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${ic("sunset", 28)} ${formatSunTime(w.sunset)}</div>`
+    ? `<div class="cur-sun">${ic("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${ic("sunset", 28)} ${formatSunTime(w.sunset)} &nbsp; ${moonStr}</div>`
     : "";
 
   const dailyHTML = w.daily_5d.map(d => {
@@ -358,7 +360,11 @@ export async function handleColorWeatherPage(env: Env, url: URL): Promise<Respon
       ? { battery_level: 73, battery_charging: false, indoor_temp_c: 22, indoor_humidity_pct: 45 }
       : device;
 
-    const html = renderHTML(weather, testDevice);
+    // ?test-moon=N overrides moon phase (0-7) for visual testing
+    const testMoon = url.searchParams.get("test-moon");
+    const moonOverride = testMoon !== null ? parseInt(testMoon, 10) : undefined;
+
+    const html = renderHTML(weather, testDevice, moonOverride);
 
     return new Response(html, {
       headers: {

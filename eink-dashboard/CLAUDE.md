@@ -280,6 +280,7 @@ eink-dashboard/
     response.ts           — htmlResponse() with security headers
     weather-ui.ts         — Shared weather page helpers (formatDate, formatTime, icon, etc.)
     headlines.ts          — Steel/trade RSS + LLM summarizer
+    moon.ts               — Pure moon phase calculator + parametric SVG icons
     skyline.ts            — World Skyline Series: city/style selection, prompt building
     skyline-image.ts      — Skyline image generation (SDXL) + BW/color post-processing
     spectra6.ts           — Spectra 6 palette constants + CSS variables
