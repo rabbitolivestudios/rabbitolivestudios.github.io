@@ -972,3 +972,34 @@ Also clamped `.alert-banner` to single line (`white-space: nowrap; overflow: hid
 - Cron warms both BW and mixed skyline buckets independently
 
 **BW style cull (same release):** Reduced BW styles from 9 to 6 for E1001 mono. Removed pencil_bw, etching_bw, pen_ink_bw — too many mid-tones that quantize to gray mush on 4-level grayscale. Reworked charcoal to "Dark Charcoal" with heavier blacks and minimal mid-tones. Kept: woodcut, noir silhouette, linocut, comic ink, scratchboard, dark charcoal.
+
+---
+
+## 34. Moon Phase Widget on Weather Pages (2026-03-11)
+
+### Decision: Pure calculation, no API
+
+**Problem:** Weather pages showed sunrise/sunset but no moon phase — a natural companion for an outdoor/weather dashboard.
+
+**Options considered:**
+| Option | Approach | Tradeoff |
+|--------|----------|----------|
+| External API (USNO, weatherapi) | Accurate to the minute | New dependency, cache needed, rate limits |
+| **Pure calculation (synodic period)** | **~29.53 day cycle from known new moon ref** | **No API, no cache, sub-ms, accurate to ±1 day** |
+
+**Chose pure calculation** because:
+- Moon phases are deterministic — the synodic period is well-known (29.53059 days)
+- 8-phase granularity (each phase spans ~3.7 days) means ±1 day error is invisible
+- Zero external dependencies, zero cache, instant computation
+- Reference: January 6, 2000 18:14 UTC (well-documented astronomical new moon)
+
+**Implementation:**
+- `src/moon.ts` — `getMoonPhase(date)` returns index (0-7), name, illumination %
+- `moonSVG(index, litColor, shadowColor)` generates parametric SVG (circle + terminator arc)
+- `moonPhaseHTML()` shared helper in `weather-ui.ts` — both pages call with their own colors
+- Mono: white lit / black shadow; Color: yellow (Spectra 6) lit / black shadow
+- Added to sunrise/sunset line in both `/weather` and `/color/weather`
+- `?test-moon=N` (0-7) parameter for visual testing on both pages
+
+**Why parametric SVG (not static icon maps):**
+Moon icons are algorithmically generated (terminator arc varies continuously), unlike hand-crafted weather icons. A single `moonSVG()` function with color parameters is cleaner than duplicating 8 SVGs × 2 color schemes = 16 static entries.

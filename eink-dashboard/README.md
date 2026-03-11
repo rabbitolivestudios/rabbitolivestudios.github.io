@@ -20,7 +20,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 
 | Endpoint | Description | Cache |
 |----------|-------------|-------|
-| `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, NWS alerts, rain warnings, indoor temp/humidity, battery level) | 15 min |
+| `GET /weather` | 800x480 HTML weather dashboard (night icons, wind direction, sunrise/sunset, moon phase, NWS alerts, rain warnings, indoor temp/humidity, battery level) | 15 min |
 | `GET /fact` | 800x480 HTML page displaying the Moment Before image | 24 hours |
 | `GET /fact.png` | 800x480 4-level grayscale "Moment Before" illustration (or birthday portrait on family birthdays) | 24 hours |
 | `GET /fact1.png` | 800x480 1-bit "Moment Before" illustration (6 rotating styles) | 24 hours |
@@ -31,8 +31,9 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /test-birthday.png?name=KEY&key=KEY` | Generate birthday portrait for a person (requires `TEST_AUTH_KEY`) | none |
 | `GET /weather.json` | Current + 12h hourly + 5-day forecast + alerts (metric) | 15 min |
 | `GET /weather?test-device` | Weather dashboard with fake device data (22°C, 45%, battery 73%) | none |
+| `GET /weather?test-moon=N` | Override moon phase (0=New, 1=Waxing Crescent, ..., 7=Waning Crescent) | none |
 | **E1002 Color Endpoints** | | |
-| `GET /color/weather` | 800x480 color HTML weather dashboard (Spectra 6 palette accents) | 30 min |
+| `GET /color/weather` | 800x480 color HTML weather dashboard (Spectra 6 palette accents, moon phase) | 30 min |
 | `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
 | `GET /color/headlines` | 800x480 color steel & trade headlines page | 6 hours |
 | `GET /color/test-moment?m=MM&d=DD&style=ID&key=KEY` | Generate color moment for any date + optional style override (requires `TEST_AUTH_KEY`) | none |

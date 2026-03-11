@@ -2,7 +2,7 @@ import type { Env, WeatherResponse, DeviceData } from "../types";
 import { getWeather } from "../weather";
 import { fetchDeviceData, E1001_DEVICE_ID } from "../device";
 import { escapeHTML } from "../escape";
-import { icon as sharedIcon, formatDate, formatTime, formatSunTime, formatDailyPrecip, getRainWarning } from "../weather-ui";
+import { icon as sharedIcon, formatDate, formatTime, formatSunTime, formatDailyPrecip, getRainWarning, moonPhaseHTML } from "../weather-ui";
 
 // Inline SVG weather icons — black on transparent, designed for e-ink
 const ICONS: Record<string, string> = {
@@ -107,7 +107,7 @@ function batteryIcon(level: number, charging: boolean, size: number): string {
 
 const ic = (key: string, size: number) => sharedIcon(ICONS, key, size);
 
-function renderHTML(w: WeatherResponse, device: DeviceData | null = null): string {
+function renderHTML(w: WeatherResponse, device: DeviceData | null = null, moonOverride?: number): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -130,9 +130,10 @@ function renderHTML(w: WeatherResponse, device: DeviceData | null = null): strin
   }
   windStr += " km/h";
 
-  // Sunrise/sunset
+  // Sunrise/sunset + moon phase
+  const moonStr = moonPhaseHTML("#fff", "#000", 22, now, moonOverride);
   const sunLine = w.sunrise && w.sunset
-    ? `<div class="cur-sun">${ic("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${ic("sunset", 28)} ${formatSunTime(w.sunset)}</div>`
+    ? `<div class="cur-sun">${ic("sunrise", 28)} ${formatSunTime(w.sunrise)} &nbsp; ${ic("sunset", 28)} ${formatSunTime(w.sunset)} &nbsp; ${moonStr}</div>`
     : "";
 
   // Daily forecast
@@ -341,7 +342,11 @@ export async function handleWeatherPageV2(env: Env, url: URL): Promise<Response>
       ? { battery_level: 73, battery_charging: false, indoor_temp_c: 22, indoor_humidity_pct: 45 }
       : device;
 
-    const html = renderHTML(weather, testDevice);
+    // ?test-moon=N overrides moon phase (0-7) for visual testing
+    const testMoon = url.searchParams.get("test-moon");
+    const moonOverride = testMoon !== null ? parseInt(testMoon, 10) : undefined;
+
+    const html = renderHTML(weather, testDevice, moonOverride);
 
     return new Response(html, {
       headers: {
