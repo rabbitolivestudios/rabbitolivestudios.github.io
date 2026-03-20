@@ -1055,4 +1055,20 @@ Moon icons are algorithmically generated (terminator arc varies continuously), u
 
 **Cache key bumped:** `skyline:v2:` → `skyline:v3:` (new model + prompts = different output)
 
-**65 reference photos uploaded** to R2 for all 30 cities. Scripts: `download-skyline-photos.sh` (Unsplash), `upload-skyline-photos.sh` (R2).
+**140 reference photos uploaded** to R2 for all 30 cities (up to 5 per city). Scripts: `download-skyline-photos.sh` + `download-skyline-photos-extra.sh` (Unsplash), `upload-skyline-photos.sh` (R2).
+
+---
+
+## 36. Skyline Neuron Budget + Stale Fallback (2026-03-20)
+
+### Decision: Drop FLUX.2 retry, add stale-cache fallback on generation failure
+
+**Problem:** The FLUX.2 double-retry + SDXL fallback tripled AI calls per skyline cache miss (3 vs 1 previously with SDXL-only). Combined with a burst of manual test requests, this exhausted the Workers AI free tier 10K neuron daily quota. Both displays showed blank screens because the skyline HTML pages serve `<img src="/skyline.png">` which returned 503.
+
+**Fix (two parts):**
+
+1. **Drop FLUX.2 retry** — single attempt, then immediate SDXL fallback. Max 2 AI calls per miss instead of 3.
+
+2. **Stale-cache fallback** — when generation fails, scan for any previously cached skyline before returning 503: previous 10 rotation buckets → yesterday's buckets → old v2 keys. Only 503 if no cache exists anywhere.
+
+**Why stale is better than placeholder:** A stale skyline (different city/style) is far more visually appealing than a blank screen on e-ink. The user won't notice it's stale since skylines change every rotation anyway.

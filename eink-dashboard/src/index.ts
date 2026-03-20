@@ -231,6 +231,52 @@ function skylineDebugHeaders(
   };
 }
 
+// --- Skyline stale fallback ---
+
+/**
+ * Scan previous rotation buckets and yesterday's cache for a stale skyline image.
+ * Returns base64 string if found, null otherwise.
+ */
+async function findStaleSkylineCache(
+  env: Env, dateStr: string, rotateMin: number, currentBucket: number, bwSuffix: string,
+): Promise<string | null> {
+  // Try previous buckets (up to 10 back = ~2.5 hours at 15-min rotation)
+  for (let i = 1; i <= 10; i++) {
+    const prevBucket = currentBucket - i;
+    if (prevBucket < 0) break;
+    const key = `skyline:v3:${dateStr}:r${rotateMin}:b${prevBucket}${bwSuffix}`;
+    const val = await env.CACHE.get(key);
+    if (val) {
+      console.log(`Skyline stale fallback: found bucket b${prevBucket}`);
+      return val;
+    }
+  }
+
+  // Try yesterday's date with recent buckets
+  const yesterday = new Date(Date.now() - 86400000);
+  const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+  for (let i = 0; i <= 5; i++) {
+    const key = `skyline:v3:${yStr}:r${rotateMin}:b${currentBucket - i}${bwSuffix}`;
+    const val = await env.CACHE.get(key);
+    if (val) {
+      console.log(`Skyline stale fallback: found yesterday ${yStr} b${currentBucket - i}`);
+      return val;
+    }
+  }
+
+  // Try v2 keys (pre-upgrade cache) as last resort
+  for (let i = 0; i <= 5; i++) {
+    const key = `skyline:v2:${dateStr}:r${rotateMin}:b${currentBucket - i}${bwSuffix}`;
+    const val = await env.CACHE.get(key);
+    if (val) {
+      console.log(`Skyline stale fallback: found v2 cache b${currentBucket - i}`);
+      return val;
+    }
+  }
+
+  return null;
+}
+
 // --- Skyline handlers ---
 
 async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
@@ -263,6 +309,17 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
       });
     } catch (err) {
       console.error("Skyline random error:", err);
+      // Random mode has no cache to fall back to — try any recent bucket
+      const stale = await findStaleSkylineCache(env, dateStr, rotateMin, bucket, bwOnly ? ":bw" : "");
+      if (stale) {
+        console.log("Skyline random: serving stale fallback");
+        try {
+          const binary = Uint8Array.from(atob(stale), (c) => c.charCodeAt(0));
+          return new Response(binary, {
+            headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "stale" },
+          });
+        } catch { /* fall through */ }
+      }
       return new Response("Failed to generate skyline image", { status: 503 });
     }
   }
@@ -297,6 +354,19 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
     });
   } catch (err) {
     console.error("Skyline image error:", err);
+
+    // Stale fallback: try recent previous buckets, then yesterday's cache
+    const stale = await findStaleSkylineCache(env, dateStr, rotateMin, bucket, bwSuffix);
+    if (stale) {
+      console.log("Skyline: serving stale cached image as fallback");
+      try {
+        const binary = Uint8Array.from(atob(stale), (c) => c.charCodeAt(0));
+        return new Response(binary, {
+          headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "stale" },
+        });
+      } catch { /* corrupted, fall through */ }
+    }
+
     return new Response("Failed to generate skyline image", { status: 503 });
   }
 }

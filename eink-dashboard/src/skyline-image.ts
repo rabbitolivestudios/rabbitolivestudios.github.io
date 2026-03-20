@@ -49,7 +49,7 @@ const CAPTION_SCALE = 1;
 // --- R2 reference photo fetching ---
 
 /** Max reference photos per city stored in R2. */
-const MAX_SKYLINE_PHOTOS = 4;
+const MAX_SKYLINE_PHOTOS = 5;
 
 /**
  * Fetch skyline reference photos from R2.
@@ -316,23 +316,22 @@ async function generateSkylineJpeg(
     const photo = pickPhoto(photos, photoSeed);
     console.log(`Skyline: found ${photos.length} ref photo(s) for ${cityKey}, using FLUX.2`);
 
-    // Retry FLUX.2 once on failure before falling back to SDXL
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const jpeg = await callFluxSkyline(env, refPrompt, photo);
-        return { jpeg, usedRef: true };
-      } catch (err) {
-        console.error(`Skyline FLUX.2 attempt ${attempt + 1} failed:`, err);
-        if (attempt === 0) continue;
-      }
+    // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
+    try {
+      const jpeg = await callFluxSkyline(env, refPrompt, photo);
+      return { jpeg, usedRef: true };
+    } catch (err) {
+      console.error("Skyline FLUX.2 failed:", err);
+      console.log("Skyline: falling back to SDXL");
     }
-    console.log("Skyline: FLUX.2 failed, falling back to SDXL");
   }
 
   // SDXL fallback (no reference photo, or FLUX.2 failed)
   const jpeg = await generateAIImage(env, sdxlPrompt, SDXL_STEPS, SDXL_GUIDANCE);
   return { jpeg, usedRef: false };
 }
+
+// (placeholder logic moved to stale-fallback in index.ts)
 
 // --- Public API ---
 
