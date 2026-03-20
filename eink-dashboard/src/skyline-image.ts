@@ -331,6 +331,8 @@ async function generateSkylineJpeg(
   return { jpeg, usedRef: false };
 }
 
+// (placeholder logic moved to stale-fallback in index.ts)
+
 // --- Public API ---
 
 export interface SkylineImageResult {
