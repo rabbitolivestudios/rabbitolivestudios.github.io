@@ -92,10 +92,10 @@ This project has independent image pipelines. They share the LLM event selection
 
 | | Pipeline A (`/fact.png`) | Pipeline B (`/fact1.png`) | Pipeline D (`/color/moment`) | Pipeline E (`/skyline`) |
 |---|---|---|---|---|
-| Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) | SDXL |
+| Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) | FLUX.2 + ref photo (fallback SDXL) |
 | Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | 5-style rotation (gouache/oil/graphic/ink/woodblock) | 15-style rotation (6 BW + 9 color) |
 | Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) | BW: 4-level gray / Color: Spectra 6 |
-| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` | `skyline:v2:DATE:rN:bBUCKET[:bw]` |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` | `skyline:v3:DATE:rN:bBUCKET[:bw]` |
 | Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) | E1002 (Spectra 6) |
 
 ---
@@ -295,8 +295,13 @@ eink-dashboard/
       color-moment.ts     — /color/moment + color birthday + test endpoints
       color-headlines.ts  — /color/headlines HTML page
       skyline.ts          — /skyline + /skyline-test HTML pages
-  photos/                 — Birthday reference photos source
-  scripts/                — Upload scripts
+  photos/
+    portraits/            — Birthday reference photos source
+    skylines/             — Skyline reference photos source (30 cities, 65 photos)
+  scripts/
+    upload-photos.sh      — Upload birthday photos to R2
+    download-skyline-photos.sh — Download skyline photos from Unsplash
+    upload-skyline-photos.sh   — Upload skyline photos to R2
   CLAUDE.md               — This file
   DECISIONS.md            — Architecture & design decisions
   README.md               — Project documentation

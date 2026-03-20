@@ -85,109 +85,54 @@ export function parseDateParts(dateStr: string): SkylineDateParts {
   return { year, month, day, dayOfYear, dateStr, displayDate };
 }
 
-// --- City list (expand freely; shuffle-per-year prevents "repeat-y" feel) ---
-export const SKYLINE_CITIES: readonly string[] = [
-  "New York, USA",
-  "Chicago, USA",
-  "San Francisco, USA",
-  "London, UK",
-  "Paris, France",
-  "Tokyo, Japan",
-  "Sydney, Australia",
-  "Hong Kong, China",
-  "Singapore",
-  "Dubai, UAE",
-  "Shanghai, China",
-  "Seoul, South Korea",
-  "Toronto, Canada",
-  "Berlin, Germany",
-  "Rome, Italy",
-  "Barcelona, Spain",
-  "Istanbul, Türkiye",
-  "Moscow, Russia",
-  "Mumbai, India",
-  "Bangkok, Thailand",
-  "Rio de Janeiro, Brazil",
-  "Buenos Aires, Argentina",
-  "Cairo, Egypt",
-  "Cape Town, South Africa",
-  "Mexico City, Mexico",
-  "Amsterdam, Netherlands",
-  "Vienna, Austria",
-  "Prague, Czech Republic",
-  "Budapest, Hungary",
-  "Lisbon, Portugal",
-  "Stockholm, Sweden",
-  "Copenhagen, Denmark",
-  "Oslo, Norway",
-  "Helsinki, Finland",
-  "Athens, Greece",
-  "Venice, Italy",
-  "Florence, Italy",
-  "Edinburgh, UK",
-  "Dublin, Ireland",
-  "Montreal, Canada",
-  "Vancouver, Canada",
-  "Havana, Cuba",
-  "Lima, Peru",
-  "Bogotá, Colombia",
-  "Santiago, Chile",
-  "Marrakech, Morocco",
-  "Nairobi, Kenya",
-  "Lagos, Nigeria",
-  "Taipei, Taiwan",
-  "Kuala Lumpur, Malaysia",
-  "Jakarta, Indonesia",
-  "Hanoi, Vietnam",
-  "Manila, Philippines",
-  "Delhi, India",
-  "Jaipur, India",
-  "Kyoto, Japan",
-  "Osaka, Japan",
-  "Beijing, China",
-  "Chongqing, China",
-  "Ho Chi Minh City, Vietnam",
-  "Melbourne, Australia",
-  "Auckland, New Zealand",
-  "Zurich, Switzerland",
-  "Munich, Germany",
-  "Hamburg, Germany",
-  "Milan, Italy",
-  "Madrid, Spain",
-  "Seville, Spain",
-  "Marseille, France",
-  "Lyon, France",
-  "Brussels, Belgium",
-  "Warsaw, Poland",
-  "Krakow, Poland",
-  "Bucharest, Romania",
-  "Doha, Qatar",
-  "Abu Dhabi, UAE",
-  "Tel Aviv, Israel",
-  "Johannesburg, South Africa",
-  "Casablanca, Morocco",
-  "Accra, Ghana",
-  "Addis Ababa, Ethiopia",
-  "Dar es Salaam, Tanzania",
-  "Panama City, Panama",
-  "Cartagena, Colombia",
-  "Quito, Ecuador",
-  "Montevideo, Uruguay",
-  "San Juan, Puerto Rico",
-  "Reykjavik, Iceland",
-  "Tallinn, Estonia",
-  "Riga, Latvia",
-  "Dubrovnik, Croatia",
-  "Porto, Portugal",
-  "Bruges, Belgium",
-  "Valletta, Malta",
-  "Muscat, Oman",
-  "Baku, Azerbaijan",
-  "Tbilisi, Georgia",
-  "Samarkand, Uzbekistan",
-  "Kathmandu, Nepal",
-  "Colombo, Sri Lanka",
+// --- City data (30 iconic cities with landmark metadata for prompt enrichment) ---
+
+export interface SkylineCity {
+  name: string;       // display name (e.g. "Paris, France")
+  key: string;        // R2 folder key (e.g. "paris") — photos stored at skylines/{key}_0.jpg
+  landmarks: string;  // comma-separated landmark names injected into prompts
+}
+
+export const SKYLINE_CITIES: readonly SkylineCity[] = [
+  { name: "New York, USA",           key: "new_york",      landmarks: "Manhattan skyline, Empire State Building, Statue of Liberty, Brooklyn Bridge" },
+  { name: "Paris, France",           key: "paris",         landmarks: "Eiffel Tower, Seine River, Notre-Dame Cathedral, Sacré-Cœur" },
+  { name: "London, UK",              key: "london",        landmarks: "Big Ben, Tower Bridge, St Paul's Cathedral, Thames River" },
+  { name: "Tokyo, Japan",            key: "tokyo",         landmarks: "Tokyo Tower, Senso-ji Temple, Shinjuku skyline, Mount Fuji backdrop" },
+  { name: "Sydney, Australia",       key: "sydney",        landmarks: "Sydney Opera House, Harbour Bridge, Circular Quay" },
+  { name: "Dubai, UAE",              key: "dubai",         landmarks: "Burj Khalifa, Dubai Marina, Palm Jumeirah" },
+  { name: "Hong Kong, China",        key: "hong_kong",     landmarks: "Victoria Harbour, Bank of China Tower, dense waterfront skyline" },
+  { name: "Singapore",               key: "singapore",     landmarks: "Marina Bay Sands, Merlion, Gardens by the Bay supertrees" },
+  { name: "Rome, Italy",             key: "rome",          landmarks: "Colosseum, St. Peter's Basilica dome, Roman Forum ruins" },
+  { name: "Barcelona, Spain",        key: "barcelona",     landmarks: "Sagrada Familia, Park Güell mosaics, Mediterranean waterfront" },
+  { name: "San Francisco, USA",      key: "san_francisco", landmarks: "Golden Gate Bridge, Painted Ladies, Transamerica Pyramid" },
+  { name: "Chicago, USA",            key: "chicago",       landmarks: "Willis Tower, Cloud Gate, Lake Michigan lakefront skyline" },
+  { name: "Istanbul, Türkiye",       key: "istanbul",      landmarks: "Hagia Sophia, Blue Mosque, Bosphorus strait, minarets" },
+  { name: "Rio de Janeiro, Brazil",  key: "rio",           landmarks: "Christ the Redeemer statue, Sugarloaf Mountain, Copacabana beach" },
+  { name: "Cairo, Egypt",            key: "cairo",         landmarks: "Great Pyramids of Giza, Sphinx, Nile River" },
+  { name: "Shanghai, China",         key: "shanghai",      landmarks: "The Bund waterfront, Oriental Pearl Tower, Pudong skyline" },
+  { name: "Moscow, Russia",          key: "moscow",        landmarks: "St. Basil's Cathedral, Red Square, Kremlin walls" },
+  { name: "Buenos Aires, Argentina", key: "buenos_aires",  landmarks: "Obelisco, Casa Rosada, La Boca colorful houses" },
+  { name: "Bangkok, Thailand",       key: "bangkok",       landmarks: "Grand Palace, Wat Arun temple, Chao Phraya River" },
+  { name: "Venice, Italy",           key: "venice",        landmarks: "Grand Canal, Rialto Bridge, St. Mark's Basilica, gondolas" },
+  { name: "Prague, Czech Republic",  key: "prague",        landmarks: "Charles Bridge, Prague Castle, Old Town astronomical clock" },
+  { name: "Cape Town, South Africa", key: "cape_town",     landmarks: "Table Mountain, V&A Waterfront, Signal Hill" },
+  { name: "Kyoto, Japan",            key: "kyoto",         landmarks: "Kinkaku-ji golden temple, Fushimi Inari torii gates, bamboo grove" },
+  { name: "Athens, Greece",          key: "athens",        landmarks: "Acropolis, Parthenon, ancient columns against modern city" },
+  { name: "Havana, Cuba",            key: "havana",        landmarks: "Malecón seawall, Capitol Building, vintage cars, colonial facades" },
+  { name: "Marrakech, Morocco",      key: "marrakech",     landmarks: "Koutoubia Mosque minaret, Djemaa el-Fna square, red clay walls" },
+  { name: "Seoul, South Korea",      key: "seoul",         landmarks: "N Seoul Tower, Gyeongbokgung Palace, Bukchon hanok village" },
+  { name: "Amsterdam, Netherlands",  key: "amsterdam",     landmarks: "canal houses, Rijksmuseum, narrow gabled facades, houseboats" },
+  { name: "Mumbai, India",           key: "mumbai",        landmarks: "Gateway of India arch, Marine Drive, Taj Mahal Palace Hotel" },
+  { name: "Mexico City, Mexico",     key: "mexico_city",   landmarks: "Angel of Independence, Palacio de Bellas Artes, Zócalo plaza" },
 ];
+
+/** Look up a city by name or key (for test endpoint overrides). */
+export function findSkylineCity(query: string): SkylineCity | undefined {
+  const q = query.toLowerCase();
+  return SKYLINE_CITIES.find(
+    (c) => c.name.toLowerCase() === q || c.key === q,
+  );
+}
 
 // --- Style definitions ---
 export type SkylineColorMode = "bw" | "color";
@@ -320,10 +265,12 @@ export function computeBucket(rotateMin: number): number {
 }
 
 // --- City picker ---
-export function pickSkylineCity(parts: SkylineDateParts, opts: SkylinePickerOpts): string {
+const CHICAGO_CITY = SKYLINE_CITIES.find((c) => c.key === "chicago")!;
+
+export function pickSkylineCity(parts: SkylineDateParts, opts: SkylinePickerOpts): SkylineCity {
   // June 1 override (>= 2025): Chicago only; STYLE STILL ROTATES NORMALLY
   if (parts.month === 6 && parts.day === 1 && parts.year >= 2025) {
-    return "Chicago, USA";
+    return CHICAGO_CITY;
   }
 
   if (opts.mode === "random") {
@@ -376,9 +323,13 @@ export function pickSkylineStyle(parts: SkylineDateParts, opts: SkylinePickerOpt
 const ANTI_TEXT_SUFFIX =
   "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
-export function buildSkylinePrompt(city: string, style: SkylineStyle): string {
+/**
+ * Build prompt for text-only generation (SDXL fallback, no reference photo).
+ */
+export function buildSkylinePrompt(city: SkylineCity, style: SkylineStyle): string {
   const sceneBase =
-    `iconic skyline of ${city} viewed from a classic overlook (waterfront or park), ` +
+    `iconic skyline of ${city.name} featuring ${city.landmarks}, ` +
+    "viewed from a classic overlook (waterfront or park), " +
     "strong horizon line, distinct building outlines, large negative space sky occupying upper half, minimal foreground clutter";
 
   const lighting =
@@ -404,14 +355,44 @@ export function buildSkylinePrompt(city: string, style: SkylineStyle): string {
   return parts.join(", ");
 }
 
+/**
+ * Build prompt for FLUX.2 generation WITH a reference photo (input_image_0).
+ * The reference anchors the composition; the style prompt handles artistic reinterpretation.
+ */
+export function buildSkylineRefPrompt(city: SkylineCity, style: SkylineStyle): string {
+  const scene =
+    `artistic reinterpretation of the scene in image 0 as an iconic ${city.name} skyline, ` +
+    `featuring ${city.landmarks}, ` +
+    "strong horizon line, distinct building outlines, large negative space sky";
+
+  const lighting =
+    style.colorMode === "color"
+      ? "golden-hour sunset or late afternoon daylight, soft warm sky"
+      : "clear daylight with high readability";
+
+  const constraints =
+    "avoid tiny window grids, avoid dense micro-detail, avoid photographic realism";
+
+  const paletteHint =
+    style.colorMode === "color"
+      ? "limited palette, large flat color regions, poster-like, high contrast"
+      : "";
+
+  const parts: string[] = [style.promptPrefix, scene, lighting, constraints];
+  if (paletteHint) parts.push(paletteHint);
+  parts.push(ANTI_TEXT_SUFFIX);
+
+  return parts.join(", ");
+}
+
 // --- Caption formatter (must match: City | World Skyline Series | Mon DD, YYYY) ---
-export function formatSkylineCaption(city: string, displayDate: string): {
+export function formatSkylineCaption(city: SkylineCity, displayDate: string): {
   left: string;
   center: string;
   right: string;
 } {
   return {
-    left: city,
+    left: city.name,
     center: SKYLINE_SERIES_NAME,
     right: displayDate,
   };

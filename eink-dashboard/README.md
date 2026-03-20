@@ -264,7 +264,7 @@ KV cache (24h)
 
 ### Key Technical Details
 
-- **Image models**: FLUX.2 klein-9b (Pipeline A), SDXL (Pipeline B + fallback)
+- **Image models**: FLUX.2 klein-9b (Pipeline A, Skyline with ref photos), SDXL (Pipeline B, Skyline fallback)
 - **LLM**: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (scene-only prompts, no style baked in)
 - **Art styles**: Daily rotation for Pipeline A (Woodcut / Pencil Sketch / Charcoal); 6-style rotation for Pipeline B (Woodcut / Silhouette / Linocut / Noir / Pen & Ink / Charcoal Block); 5-style rotation for Pipeline D (Gouache / Oil Painting / Graphic Novel / Ink+Wash / Color Woodblock)
 - **4-level output**: 8-bit grayscale PNG quantized to 4 levels (0, 85, 170, 255)
@@ -304,7 +304,7 @@ KV cache (24h)
 | `env.AI` | Workers AI | LLM + image generation (SDXL + FLUX.2) |
 | `env.IMAGES` | Cloudflare Images | Format conversion + center-crop/resize to 800×480 via `.transform()` |
 | `env.CACHE` | KV Namespace | Response caching (24h/6h) |
-| `env.PHOTOS` | R2 Bucket | Birthday reference photos |
+| `env.PHOTOS` | R2 Bucket | Birthday portraits (`portraits/`) + skyline reference photos (`skylines/`) |
 | `env.TEST_AUTH_KEY` | Secret | Auth key for expensive test endpoints (optional, open in dev) |
 
 > **Note**: The `APOD_API_KEY` secret was removed in v3.10.1. NASA APOD has been replaced by the World Skyline Series. The Cloudflare secret can be deleted: `npx wrangler secret delete APOD_API_KEY`.
