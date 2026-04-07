@@ -296,6 +296,16 @@ async function findStaleSkylineCache(
 
 // --- Skyline handlers ---
 
+/**
+ * Cross-fallback: if color skyline is unavailable, try serving the BW cache.
+ * A BW image on a color display is far better than a blank screen / 503.
+ */
+async function findBwFallback(
+  env: Env, dateStr: string, rotateMin: number, bucket: number,
+): Promise<string | null> {
+  return findStaleSkylineCache(env, dateStr, rotateMin, bucket, ":bw");
+}
+
 async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   const { dateStr } = getChicagoDateParts();
   const mode = parseSkylineMode(url.searchParams.get("mode"));
@@ -336,6 +346,19 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
             headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "stale" },
           });
         } catch { /* fall through */ }
+      }
+      // Cross-fallback: color request can serve BW cache (better than blank screen)
+      if (!bwOnly) {
+        const bwFallback = await findBwFallback(env, dateStr, rotateMin, bucket);
+        if (bwFallback) {
+          console.log("Skyline: serving BW cache as cross-fallback for color");
+          try {
+            const binary = Uint8Array.from(atob(bwFallback), (c) => c.charCodeAt(0));
+            return new Response(binary, {
+              headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "bw-cross" },
+            });
+          } catch { /* fall through */ }
+        }
       }
       return new Response("Failed to generate skyline image", { status: 503 });
     }
@@ -382,6 +405,20 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
           headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "stale" },
         });
       } catch { /* corrupted, fall through */ }
+    }
+
+    // Cross-fallback: color request can serve BW cache (better than blank screen)
+    if (!bwOnly) {
+      const bwFallback = await findBwFallback(env, dateStr, rotateMin, bucket);
+      if (bwFallback) {
+        console.log("Skyline: serving BW cache as cross-fallback for color");
+        try {
+          const binary = Uint8Array.from(atob(bwFallback), (c) => c.charCodeAt(0));
+          return new Response(binary, {
+            headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-Fallback": "bw-cross" },
+          });
+        } catch { /* fall through */ }
+      }
     }
 
     return new Response("Failed to generate skyline image", { status: 503 });
