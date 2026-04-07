@@ -1098,3 +1098,36 @@ Moon icons are algorithmically generated (terminator arc varies continuously), u
 - Total: well within 10,000 neurons/day
 
 **Future:** Upgrading to Workers Paid ($5/mo) would remove the neuron cap entirely.
+
+---
+
+## 38. Neuron Budget Fix — Drop Retries + Headlines + BW SDXL-Only (v3.11.1, 2026-04-07)
+
+### Decision: Eliminate all FLUX.2 retry loops, disable headlines, BW skyline uses SDXL-only
+
+**Problem:** Despite Decision #37 (sequential cron + daily skyline), neurons were STILL exhausted. Investigation revealed:
+
+1. **FLUX.2 retry loops were only partially removed** — Decision #37 dropped the retry in `skyline-image.ts` but missed three other files:
+   - `image.ts` (Pipeline A): 2 FLUX.2 attempts
+   - `pages/color-moment.ts` (Color Moment): 2 FLUX.2 attempts
+   - `pages/color-moment.ts` (Color Birthday): 2 FLUX.2 attempts
+   - `birthday-image.ts` (Birthday): 2 FLUX.2 attempts
+
+2. **Worst case was 11 AI calls per cron** — 6 FLUX.2 (with retries) + 3 SDXL + 2 LLM. FLUX.2 is the most expensive model on Workers AI. Even best-case (no failures) was 4 FLUX.2 + 1 SDXL + 2 LLM.
+
+3. **Headlines LLM call was wasting budget** — `getHeadlines()` used 1 LLM call per 6h period, and the displayed news was often stale. Disabled until a better approach is found.
+
+**Fix (three parts):**
+
+1. **Single FLUX.2 attempt everywhere** — All 4 retry loops replaced with single attempt + SDXL fallback. Saves up to 3 wasted FLUX.2 calls.
+
+2. **Headlines disabled** — Removed from cron (saves 1 LLM call per 6h), `/color/headlines` 302 redirects to `/skyline` so E1002 pagelist doesn't break.
+
+3. **Skyline BW uses SDXL-only** — `sdxlOnly` parameter added to `generateSkylineImage`. BW skyline skips FLUX.2 entirely since SDXL produces good BW artwork and saves 1 FLUX.2 call. On-demand `/skyline.png?bw=1` also uses SDXL-only.
+
+**Neuron budget after fix:**
+- Best case: 1 LLM + 3 FLUX.2 + 2 SDXL = 6 calls (was up to 11)
+- No headlines LLM call
+- Skyline BW is SDXL-only (cheapest image model)
+
+**Files changed:** `image.ts`, `pages/color-moment.ts`, `birthday-image.ts`, `skyline-image.ts`, `index.ts`, `package.json`

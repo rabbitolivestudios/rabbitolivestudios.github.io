@@ -445,15 +445,11 @@ export async function generateMomentImage(
 
   let gray: Uint8Array | null = null;
 
-  // Try FLUX.2 (retry once on failure)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      gray = await generateAndDecodeGrayFlux(env, styledPrompt);
-      break;
-    } catch (err) {
-      console.error(`Pipeline A FLUX.2 attempt ${attempt + 1} failed:`, err);
-      if (attempt === 0) continue;
-    }
+  // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
+  try {
+    gray = await generateAndDecodeGrayFlux(env, styledPrompt);
+  } catch (err) {
+    console.error("Pipeline A FLUX.2 failed:", err);
   }
 
   // Fallback to SDXL with woodcut style

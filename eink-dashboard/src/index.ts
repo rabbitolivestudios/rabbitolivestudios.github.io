@@ -7,7 +7,8 @@ import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
 import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday, generateColorMoment, getColorMomentStyle } from "./pages/color-moment";
-import { handleColorHeadlinesPage } from "./pages/color-headlines";
+// Headlines temporarily disabled — stale news problem; will rethink approach
+// import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { skylinePageResponse, skylineTestPageResponse, skylineBwPageResponse } from "./pages/skyline";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
@@ -15,7 +16,8 @@ import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { getChicagoDateParts } from "./date-utils";
 import { parseMonth, parseDay, parseStyleIdx } from "./validate";
-import { getHeadlines, getCurrentPeriod } from "./headlines";
+// Headlines temporarily disabled — stale news problem; will rethink approach
+// import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { pngToBase64 } from "./png";
 import {
   parseDateParts,
@@ -34,7 +36,7 @@ import {
 import type { SkylineColorMode, SkylineMode, SkylinePickerOpts, SkylineCity } from "./skyline";
 import { generateSkylineImage } from "./skyline-image";
 
-const VERSION = "3.11.0";
+const VERSION = "3.11.1";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -318,7 +320,7 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   if (mode === "random") {
     try {
       console.log(`Skyline random: ${city.name} | ${style.label} (${style.colorMode})`);
-      const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed);
+      const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed, bwOnly);
       return new Response(result.png, {
         headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-UsedRef": String(result.usedRef) },
       });
@@ -359,9 +361,9 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   }
 
   try {
-    console.log(`Skyline ${mode}: ${city.name} | ${style.label} (${style.colorMode}) | bucket=${bucket}`);
+    console.log(`Skyline ${mode}: ${city.name} | ${style.label} (${style.colorMode}) | bucket=${bucket}${bwOnly ? " sdxlOnly" : ""}`);
 
-    const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed);
+    const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed, bwOnly);
     await env.CACHE.put(cacheKey, result.base64, { expirationTtl: Math.max(ttl, 900) });
 
     return new Response(result.png, {
@@ -467,7 +469,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
   // Determine daily image keys (birthday-aware)
   const birthday = getBirthdayToday(monthNum, dayNum);
   const colorStyle = getColorMomentStyle(dateStr);
-  const period = getCurrentPeriod();
   const fact4Key = birthday ? `birthday:v1:${dateStr}` : `fact4:v4:${dateStr}`;
   const fact1Key = `fact1:v7:${dateStr}`;
   const colorMomentKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
@@ -478,7 +479,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
     ? `skyline:v3:${dateStr}:daily:bw`
     : `skyline:v3:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${computeBucket(DEFAULT_ROTATE_MIN)}:bw`;
   const momentKey = `moment:v1:${dateStr}`;
-  const headlinesKey = `headlines:v3:${dateStr}:${period}`;
 
   // Fetch all keys in parallel
   const [
@@ -486,7 +486,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
     weatherHomeRaw, weatherOfficeRaw,
     alertsHomeRaw, alertsOfficeRaw,
     deviceHomeRaw, deviceOfficeRaw,
-    headlinesRaw,
   ] = await Promise.all([
     env.CACHE.get(fact4Key),
     env.CACHE.get(fact1Key),
@@ -500,7 +499,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
     env.CACHE.get("alerts:60606:v1"),
     env.CACHE.get(`device:${E1001_DEVICE_ID}:v1`),
     env.CACHE.get(`device:${E1002_DEVICE_ID}:v1`),
-    env.CACHE.get(headlinesKey),
   ]);
 
   return jsonResponse(
@@ -524,7 +522,6 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
         alerts_office:  ephemeralStatus(parseEphemeral(alertsOfficeRaw),   5),
         device_home:    ephemeralStatus(parseEphemeral(deviceHomeRaw),     5),
         device_office:  ephemeralStatus(parseEphemeral(deviceOfficeRaw),   5),
-        headlines:      ephemeralStatus(parseEphemeral(headlinesRaw),    360),
       },
       config: {
         test_auth_key: env.TEST_AUTH_KEY ? "configured" : "missing",
@@ -547,22 +544,21 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     const monthNum = parseInt(month);
     const dayNum = parseInt(day);
 
-    // --- Every-6h: headlines + weather + device (parallel, independent) ---
-    const period = getCurrentPeriod();
+    // --- Every-6h: weather + device (parallel, independent) ---
+    // Headlines temporarily disabled — stale news problem; will rethink approach
     const sixHourResults = await Promise.allSettled([
-      getHeadlines(env, dateStr, period),
       getWeather(env),
       getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL"),
       fetchDeviceData(env, E1001_DEVICE_ID),
       fetchDeviceData(env, E1002_DEVICE_ID),
     ]);
-    const labels = ["headlines", "weather-60540", "weather-60606", "device-E1001", "device-E1002"] as const;
+    const labels = ["weather-60540", "weather-60606", "device-E1001", "device-E1002"] as const;
     for (let i = 0; i < sixHourResults.length; i++) {
       if (sixHourResults[i].status === "rejected") {
         console.error(`Cron: ${labels[i]} warm failed:`, (sixHourResults[i] as PromiseRejectedResult).reason);
       }
     }
-    console.log("Cron: warmed 6h data (headlines, weather, devices)");
+    console.log("Cron: warmed 6h data (weather, devices)");
 
     // --- Daily only: images + skyline ---
     if (!isDaily) return;
@@ -703,9 +699,9 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
           const bwSdxlPrompt = buildSkylinePrompt(bwCity, bwStyle);
           const bwCaption = formatSkylineCaption(bwCity, bwParts.displayDate);
           const bwPhotoSeed = djb2(`${dateStr}|photo|daily-bw`);
-          const bwResult = await generateSkylineImage(env, bwRefPrompt, bwSdxlPrompt, bwCaption, bwStyle.colorMode, bwCity.key, bwPhotoSeed);
+          const bwResult = await generateSkylineImage(env, bwRefPrompt, bwSdxlPrompt, bwCaption, bwStyle.colorMode, bwCity.key, bwPhotoSeed, true);
           await env.CACHE.put(bwCacheKey, bwResult.base64, { expirationTtl: 86400 });
-          console.log(`Cron: cached skyline BW daily (${bwCity.name}, ${bwStyle.label}, ref=${bwResult.usedRef})`);
+          console.log(`Cron: cached skyline BW daily (${bwCity.name}, ${bwStyle.label}, sdxlOnly)`);
         } else {
           console.log(`Cron: skyline BW already cached for today`);
         }
@@ -866,7 +862,8 @@ export default {
         // Redirect legacy APOD route to skyline
         return Response.redirect(new URL("/skyline", url).href, 301);
       case "/color/headlines":
-        return handleColorHeadlinesPage(env, url);
+        // Headlines temporarily disabled — redirect to skyline so E1002 pagelist doesn't break
+        return Response.redirect(new URL("/skyline", url).href, 302);
       case "/skyline.png":
         return handleSkylinePng(env, url);
       case "/skyline":
@@ -893,7 +890,7 @@ export default {
             error: "Not found",
             endpoints: [
               "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
-              "/color/weather", "/color/moment", "/color/headlines",
+              "/color/weather", "/color/moment",
               "/skyline", "/skyline-bw", "/skyline.png",
               "/test-birthday.png", "/health", "/health-detailed",
             ],

@@ -308,25 +308,30 @@ async function generateSkylineJpeg(
   sdxlPrompt: string,
   cityKey: string,
   photoSeed: number,
+  sdxlOnly: boolean = false,
 ): Promise<{ jpeg: Uint8Array; usedRef: boolean }> {
-  // Try to fetch reference photos from R2
-  const photos = await fetchSkylinePhotos(env, cityKey);
+  if (!sdxlOnly) {
+    // Try to fetch reference photos from R2
+    const photos = await fetchSkylinePhotos(env, cityKey);
 
-  if (photos.length > 0) {
-    const photo = pickPhoto(photos, photoSeed);
-    console.log(`Skyline: found ${photos.length} ref photo(s) for ${cityKey}, using FLUX.2`);
+    if (photos.length > 0) {
+      const photo = pickPhoto(photos, photoSeed);
+      console.log(`Skyline: found ${photos.length} ref photo(s) for ${cityKey}, using FLUX.2`);
 
-    // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
-    try {
-      const jpeg = await callFluxSkyline(env, refPrompt, photo);
-      return { jpeg, usedRef: true };
-    } catch (err) {
-      console.error("Skyline FLUX.2 failed:", err);
-      console.log("Skyline: falling back to SDXL");
+      // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
+      try {
+        const jpeg = await callFluxSkyline(env, refPrompt, photo);
+        return { jpeg, usedRef: true };
+      } catch (err) {
+        console.error("Skyline FLUX.2 failed:", err);
+        console.log("Skyline: falling back to SDXL");
+      }
     }
+  } else {
+    console.log("Skyline: SDXL-only mode (skipping FLUX.2 to conserve neurons)");
   }
 
-  // SDXL fallback (no reference photo, or FLUX.2 failed)
+  // SDXL fallback (no reference photo, FLUX.2 failed, or sdxlOnly)
   const jpeg = await generateAIImage(env, sdxlPrompt, SDXL_STEPS, SDXL_GUIDANCE);
   return { jpeg, usedRef: false };
 }
@@ -358,8 +363,9 @@ export async function generateSkylineImage(
   colorMode: SkylineColorMode,
   cityKey: string,
   photoSeed: number,
+  sdxlOnly: boolean = false,
 ): Promise<SkylineImageResult> {
-  const { jpeg, usedRef } = await generateSkylineJpeg(env, refPrompt, sdxlPrompt, cityKey, photoSeed);
+  const { jpeg, usedRef } = await generateSkylineJpeg(env, refPrompt, sdxlPrompt, cityKey, photoSeed, sdxlOnly);
 
   if (colorMode === "bw") {
     const gray = await jpegToGray(env, jpeg);

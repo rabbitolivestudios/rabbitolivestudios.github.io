@@ -83,14 +83,11 @@ export async function generateColorMoment(
 
   let rgb: Uint8Array | null = null;
 
-  // Try FLUX.2 first (better color range)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      rgb = await generateAndDecodeColorFlux(env, prompt);
-      break;
-    } catch (err) {
-      console.error(`Color moment FLUX.2 attempt ${attempt + 1} failed:`, err);
-    }
+  // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
+  try {
+    rgb = await generateAndDecodeColorFlux(env, prompt);
+  } catch (err) {
+    console.error("Color moment FLUX.2 failed:", err);
   }
 
   // Fallback to SDXL
@@ -132,16 +129,13 @@ async function generateColorBirthday(
   const photos = await fetchReferencePhotos(env, person.key);
   console.log(`Color birthday: found ${photos.length} reference photo(s) for ${person.key}`);
 
-  // Try FLUX.2 with reference photos (2 attempts)
+  // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
   let rgb: Uint8Array | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
-      rgb = await jpegToRGB(env, jpegBytes);
-      break;
-    } catch (err) {
-      console.error(`Color birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
-    }
+  try {
+    const jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
+    rgb = await jpegToRGB(env, jpegBytes);
+  } catch (err) {
+    console.error("Color birthday FLUX.2 failed:", err);
   }
 
   // Fallback: SDXL with text-only prompt (no reference photos — API limitation)

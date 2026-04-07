@@ -57,20 +57,16 @@ export async function generateBirthdayImage(
   const photos = await fetchReferencePhotos(env, person.key);
   console.log(`Birthday: found ${photos.length} reference photo(s) for ${person.key}`);
 
-  // Generate portrait with FLUX.2 (retry once on failure)
+  // Single FLUX.2 attempt — no retry to conserve neuron budget (free tier)
   let jpegBytes: Uint8Array | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
-      break;
-    } catch (err) {
-      console.error(`Birthday FLUX.2 attempt ${attempt + 1} failed:`, err);
-      if (attempt === 0) continue;
-    }
+  try {
+    jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
+  } catch (err) {
+    console.error("Birthday FLUX.2 failed:", err);
   }
 
   if (!jpegBytes) {
-    throw new Error("FLUX.2 portrait generation failed after retries");
+    throw new Error("FLUX.2 portrait generation failed");
   }
 
   // JPEG → PNG via Cloudflare Images
