@@ -1130,4 +1130,6 @@ Moon icons are algorithmically generated (terminator arc varies continuously), u
 - No headlines LLM call
 - Skyline BW is SDXL-only (cheapest image model)
 
+**BW cross-fallback for color skyline:** When color skyline generation fails and no stale color cache exists, the handler now serves the BW skyline cache instead of returning 503 (blank screen). Fallback chain: color cache → generate → stale color → BW cache → 503. Response includes `X-Skyline-Fallback: bw-cross` header for diagnostics.
+
 **Files changed:** `image.ts`, `pages/color-moment.ts`, `birthday-image.ts`, `skyline-image.ts`, `index.ts`, `package.json`
