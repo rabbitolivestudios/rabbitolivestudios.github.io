@@ -4,7 +4,7 @@
 
 **Default behavior**: Prefer small, reviewable changes. Test visually before deploying. Strong documentation over large refactors.
 
-**Critical**: The auto-memory (`MEMORY.md`) defines current technical truth. When sources conflict, prefer `MEMORY.md` first, then `DECISIONS.md`, then `README.md`, then session chat logs.
+**Critical**: Claude Code auto-memory (`MEMORY.md`) may exist outside this checkout. If it is present/auto-loaded, it defines current technical truth. If absent, prefer `DECISIONS.md`, then `README.md`, then source code and git history.
 
 ---
 
@@ -13,7 +13,7 @@
 Every session must begin with these steps:
 
 1. Read this file (`CLAUDE.md`) end-to-end
-2. Read `MEMORY.md` (auto-loaded) — authoritative technical snapshot
+2. Read `MEMORY.md` if present/auto-loaded — authoritative technical snapshot for Claude sessions
 3. Read `DECISIONS.md` — understand standing decisions and failed approaches
 4. Read `README.md` — understand current endpoints, pipelines, architecture
 5. Run `git log --oneline -10` — understand recent changes
@@ -57,7 +57,9 @@ Every session must begin with these steps:
 
 ```bash
 # Build check (always run before committing)
-npx wrangler deploy --dry-run
+npm run typecheck
+npm run test:utils
+npm run dry-run
 
 # Local dev server (check port 8787/8790 availability first)
 lsof -ti:8790
@@ -95,7 +97,7 @@ This project has independent image pipelines. They share the LLM event selection
 | Model | FLUX.2 klein-9b | SDXL | FLUX.2 (fallback SDXL) | FLUX.2 + ref photo (fallback SDXL) |
 | Style | Daily rotation (Woodcut/Pencil/Charcoal) | 6-style rotation (style-aware) | 5-style rotation (gouache/oil/graphic/ink/woodblock) | 15-style rotation (6 BW + 9 color) |
 | Output | 4-level grayscale | 1-bit (Bayer or threshold) | 6-color Spectra (Floyd-Steinberg) | BW: 4-level gray / Color: Spectra 6 |
-| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` | `skyline:v3:DATE:rN:bBUCKET[:bw]` |
+| Cache key | `fact4:v4:YYYY-MM-DD` | `fact1:v7:YYYY-MM-DD` | `color-moment:v2:YYYY-MM-DD:STYLE_ID` | default `skyline:v3:DATE:daily[:bw]`; rotate `skyline:v3:DATE:rN:bBUCKET[:bw]` |
 | Display | E1001 (mono) | E1001 (mono) | E1002 (Spectra 6) | E1002 (Spectra 6) |
 
 ---
@@ -135,7 +137,7 @@ Change logging is mandatory. Every meaningful change must update documentation *
 
 | File | Purpose | Update when |
 |------|---------|-------------|
-| `MEMORY.md` | Auto-memory — technical truth, key learnings | Architecture changes, new patterns, critical bugs |
+| `MEMORY.md` | Claude Code auto-memory when available; may be external to this checkout | Architecture changes, new patterns, critical bugs |
 | `DECISIONS.md` | Why things are the way they are, failed approaches | Any tradeoff, threshold change, or pipeline change |
 | `README.md` | User-facing: endpoints, pipelines, architecture, setup | New endpoints, changed behavior, version bumps |
 | `package.json` | Version number | Feature releases |
@@ -147,7 +149,7 @@ Every time you update documentation, sweep ALL files:
 
 | # | File | Check |
 |---|------|-------|
-| 1 | `MEMORY.md` | Key architecture, cache keys, learnings — all accurate? |
+| 1 | `MEMORY.md` | If present, key architecture, cache keys, learnings — all accurate? |
 | 2 | `DECISIONS.md` | Any new or changed decisions documented? |
 | 3 | `README.md` | Endpoints table, architecture diagram, version — all accurate? |
 | 4 | `package.json` + `src/index.ts` | Version numbers match? |
@@ -161,7 +163,7 @@ Do not commit documentation updates until you have verified every file.
 - **Think before coding.** Follow this order:
   1. Think about the architecture
   2. Read the existing codebase
-  3. Check `DECISIONS.md` and `MEMORY.md` for past learnings
+  3. Check `DECISIONS.md` and `MEMORY.md` if present for past learnings
   4. Implement, or ask about tradeoffs
 - **Fix from first principles.** Don't apply bandaids. Find the root cause.
 - **Keep it simple.** Write idiomatic TypeScript. Always ask: is this the simplest solution?
@@ -279,7 +281,7 @@ eink-dashboard/
     validate.ts           — Input validation (parseMonth, parseDay, parseStyleIdx)
     response.ts           — htmlResponse() with security headers
     weather-ui.ts         — Shared weather page helpers (formatDate, formatTime, icon, etc.)
-    headlines.ts          — Steel/trade RSS + LLM summarizer
+    headlines.ts          — Steel/trade RSS/HTML fetch + deterministic ranking (no LLM)
     moon.ts               — Pure moon phase calculator + parametric SVG icons
     skyline.ts            — World Skyline Series: city/style selection, prompt building
     skyline-image.ts      — Skyline image generation (SDXL) + BW/color post-processing

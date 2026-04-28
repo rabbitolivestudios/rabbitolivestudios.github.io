@@ -15,6 +15,7 @@ import {
 } from "./image";
 import { applyToneCurve } from "./convert-1bit";
 import { getArtStyle } from "./birthday";
+import { isNeuronBudgetError } from "./cache-guard";
 import type { BirthdayPerson } from "./birthday";
 import type { Env } from "./types";
 
@@ -63,6 +64,7 @@ export async function generateBirthdayImage(
     jpegBytes = await callFluxPortrait(env, person, style.prompt, photos, currentYear);
   } catch (err) {
     console.error("Birthday FLUX.2 failed:", err);
+    if (isNeuronBudgetError(err)) throw err;
   }
 
   if (!jpegBytes) {

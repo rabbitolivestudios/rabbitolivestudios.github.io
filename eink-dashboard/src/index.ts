@@ -7,8 +7,7 @@ import { handleWeatherPageV2 } from "./pages/weather2";
 import { handleFactPage } from "./pages/fact";
 import { handleColorWeatherPage } from "./pages/color-weather";
 import { handleColorMomentPage, handleColorTestMoment, handleColorTestBirthday, generateColorMoment, getColorMomentStyle } from "./pages/color-moment";
-// Headlines temporarily disabled — stale news problem; will rethink approach
-// import { handleColorHeadlinesPage } from "./pages/color-headlines";
+import { handleColorHeadlinesPage } from "./pages/color-headlines";
 import { skylinePageResponse, skylineTestPageResponse, skylineBwPageResponse } from "./pages/skyline";
 import { getBirthdayToday, getBirthdayByKey } from "./birthday";
 import { generateBirthdayImage } from "./birthday-image";
@@ -16,8 +15,23 @@ import { fetchDeviceData, E1001_DEVICE_ID, E1002_DEVICE_ID } from "./device";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { getChicagoDateParts } from "./date-utils";
 import { parseMonth, parseDay, parseStyleIdx } from "./validate";
-// Headlines temporarily disabled — stale news problem; will rethink approach
-// import { getHeadlines, getCurrentPeriod } from "./headlines";
+import {
+  fact4CacheKey,
+  fact1CacheKey,
+  birthdayCacheKey,
+  colorMomentCacheKey,
+  colorBirthdayCacheKey,
+  momentCacheKey,
+  skylineCacheKey,
+} from "./cache-keys";
+import {
+  assertAiBudgetAvailable,
+  getAiBudgetBlock,
+  isNeuronBudgetError,
+  markAiBudgetExhausted,
+  withGenerationLock,
+} from "./cache-guard";
+import { getHeadlines, getCurrentPeriod } from "./headlines";
 import { pngToBase64 } from "./png";
 import {
   parseDateParts,
@@ -36,7 +50,7 @@ import {
 import type { SkylineColorMode, SkylineMode, SkylinePickerOpts, SkylineCity } from "./skyline";
 import { generateSkylineImage } from "./skyline-image";
 
-const VERSION = "3.11.1";
+const VERSION = "3.11.2";
 
 /** Check test endpoint auth. Returns null if allowed, or a 404 Response if denied. */
 function checkTestAuth(url: URL, env: Env): Response | null {
@@ -45,6 +59,18 @@ function checkTestAuth(url: URL, env: Env): Response | null {
   if (key === env.TEST_AUTH_KEY) return null; // correct key → allow
   // Wrong or missing key → 404 (hide endpoint existence)
   return new Response("Not found", { status: 404 });
+}
+
+async function checkAiBudget(env: Env): Promise<Response | null> {
+  try {
+    await assertAiBudgetAvailable(env);
+    return null;
+  } catch (err) {
+    return new Response(String((err as any)?.message ?? err), {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "300" },
+    });
+  }
 }
 
 // Simple in-memory rate limiter (per isolate lifecycle)
@@ -133,41 +159,57 @@ async function handleFactImage(env: Env): Promise<Response> {
   const birthday = getBirthdayToday(monthNum, dayNum);
 
   if (birthday) {
-    const bdayCacheKey = `birthday:v1:${dateStr}`;
-    const cachedB64 = await env.CACHE.get(bdayCacheKey);
-    if (cachedB64) {
+    const bdayCacheKey = birthdayCacheKey(dateStr);
+    const readBirthdayCache = async (): Promise<Response | null> => {
+      const cachedB64 = await env.CACHE.get(bdayCacheKey);
+      if (!cachedB64) return null;
       console.log("birthday: cache hit");
       const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
       return new Response(binary, { headers: PNG_HEADERS });
-    }
+    };
+
+    const cachedBirthday = await readBirthdayCache();
+    if (cachedBirthday) return cachedBirthday;
 
     try {
-      console.log(`Birthday detected: ${birthday.name} (${birthday.key})`);
-      const png = await generateBirthdayImage(env, birthday, yearNum);
-      await env.CACHE.put(bdayCacheKey, pngToBase64(png), { expirationTtl: 604800 });
-      return new Response(png, { headers: PNG_HEADERS });
+      await assertAiBudgetAvailable(env);
+      return await withGenerationLock(env, bdayCacheKey, readBirthdayCache, async () => {
+        console.log(`Birthday detected: ${birthday.name} (${birthday.key})`);
+        const png = await generateBirthdayImage(env, birthday, yearNum);
+        await env.CACHE.put(bdayCacheKey, pngToBase64(png), { expirationTtl: 604800 });
+        return new Response(png, { headers: PNG_HEADERS });
+      });
     } catch (err) {
+      await markAiBudgetExhausted(env, "fact.png birthday", err);
       console.error("Birthday image failed, falling back to Moment Before:", err);
       // Fall through to regular pipeline
     }
   }
 
   // Regular Moment Before pipeline
-  const cacheKey = `fact4:v4:${dateStr}`;
-  const cachedB64 = await env.CACHE.get(cacheKey);
-  if (cachedB64) {
+  const cacheKey = fact4CacheKey(dateStr);
+  const readFactCache = async (): Promise<Response | null> => {
+    const cachedB64 = await env.CACHE.get(cacheKey);
+    if (!cachedB64) return null;
     console.log("fact.png: cache hit");
     const binary = Uint8Array.from(atob(cachedB64), (c) => c.charCodeAt(0));
     return new Response(binary, { headers: PNG_HEADERS });
-  }
+  };
+
+  const cachedFact = await readFactCache();
+  if (cachedFact) return cachedFact;
 
   try {
-    const { events, displayDate } = await getTodayEvents(env);
-    const moment = await generateMomentBefore(env, events);
-    const png = await generateMomentImage(env, moment, displayDate, dateStr);
-    await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
-    return new Response(png, { headers: PNG_HEADERS });
+    await assertAiBudgetAvailable(env);
+    return await withGenerationLock(env, cacheKey, readFactCache, async () => {
+      const { events, displayDate } = await getTodayEvents(env);
+      const moment = await getOrGenerateMoment(env, events, dateStr);
+      const png = await generateMomentImage(env, moment, displayDate, dateStr);
+      await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
+      return new Response(png, { headers: PNG_HEADERS });
+    });
   } catch (err) {
+    await markAiBudgetExhausted(env, "fact.png", err);
     console.error("Moment Before image error:", err);
     return new Response("Failed to generate image", { status: 503 });
   }
@@ -180,22 +222,30 @@ async function handleFactImage(env: Env): Promise<Response> {
  */
 async function handleFact1BitImage(env: Env): Promise<Response> {
   const { dateStr } = getChicagoDateParts();
-  const cacheKey = `fact1:v7:${dateStr}`;
+  const cacheKey = fact1CacheKey(dateStr);
 
-  const cachedB641 = await env.CACHE.get(cacheKey);
-  if (cachedB641) {
+  const readCache = async (): Promise<Response | null> => {
+    const cachedB641 = await env.CACHE.get(cacheKey);
+    if (!cachedB641) return null;
     console.log("fact1.png: cache hit");
     const binary = Uint8Array.from(atob(cachedB641), (c) => c.charCodeAt(0));
     return new Response(binary, { headers: PNG_HEADERS });
-  }
+  };
+
+  const cached = await readCache();
+  if (cached) return cached;
 
   try {
-    const { events, displayDate } = await getTodayEvents(env);
-    const moment = await generateMomentBefore(env, events);
-    const png = await generateMomentImage1Bit(env, moment, displayDate, dateStr);
-    await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
-    return new Response(png, { headers: PNG_HEADERS });
+    await assertAiBudgetAvailable(env);
+    return await withGenerationLock(env, cacheKey, readCache, async () => {
+      const { events, displayDate } = await getTodayEvents(env);
+      const moment = await getOrGenerateMoment(env, events, dateStr);
+      const png = await generateMomentImage1Bit(env, moment, displayDate, dateStr);
+      await env.CACHE.put(cacheKey, pngToBase64(png), { expirationTtl: 604800 });
+      return new Response(png, { headers: PNG_HEADERS });
+    });
   } catch (err) {
+    await markAiBudgetExhausted(env, "fact1.png", err);
     console.error("1-bit Moment Before image error:", err);
     return new Response("Failed to generate image", { status: 503 });
   }
@@ -242,8 +292,10 @@ function skylineDebugHeaders(
 async function findStaleSkylineCache(
   env: Env, dateStr: string, rotateMin: number, currentBucket: number, bwSuffix: string,
 ): Promise<string | null> {
+  const bwOnly = bwSuffix === ":bw";
+
   // Try today's daily key first
-  const dailyKey = `skyline:v3:${dateStr}:daily${bwSuffix}`;
+  const dailyKey = skylineCacheKey(dateStr, "daily", rotateMin, currentBucket, bwOnly);
   const dailyVal = await env.CACHE.get(dailyKey);
   if (dailyVal) {
     console.log("Skyline stale fallback: found today's daily cache");
@@ -254,7 +306,7 @@ async function findStaleSkylineCache(
   for (let i = 1; i <= 10; i++) {
     const prevBucket = currentBucket - i;
     if (prevBucket < 0) break;
-    const key = `skyline:v3:${dateStr}:r${rotateMin}:b${prevBucket}${bwSuffix}`;
+    const key = skylineCacheKey(dateStr, "rotate", rotateMin, prevBucket, bwOnly);
     const val = await env.CACHE.get(key);
     if (val) {
       console.log(`Skyline stale fallback: found bucket b${prevBucket}`);
@@ -266,14 +318,14 @@ async function findStaleSkylineCache(
   const yesterday = new Date(Date.now() - 86400000);
   const yStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
 
-  const yDailyVal = await env.CACHE.get(`skyline:v3:${yStr}:daily${bwSuffix}`);
+  const yDailyVal = await env.CACHE.get(skylineCacheKey(yStr, "daily", rotateMin, currentBucket, bwOnly));
   if (yDailyVal) {
     console.log(`Skyline stale fallback: found yesterday ${yStr} daily cache`);
     return yDailyVal;
   }
 
   for (let i = 0; i <= 5; i++) {
-    const key = `skyline:v3:${yStr}:r${rotateMin}:b${currentBucket - i}${bwSuffix}`;
+    const key = skylineCacheKey(yStr, "rotate", rotateMin, currentBucket - i, bwOnly);
     const val = await env.CACHE.get(key);
     if (val) {
       console.log(`Skyline stale fallback: found yesterday ${yStr} b${currentBucket - i}`);
@@ -329,12 +381,14 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
   // mode=random → no cache
   if (mode === "random") {
     try {
+      await assertAiBudgetAvailable(env);
       console.log(`Skyline random: ${city.name} | ${style.label} (${style.colorMode})`);
       const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed, bwOnly);
       return new Response(result.png, {
         headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-UsedRef": String(result.usedRef) },
       });
     } catch (err) {
+      await markAiBudgetExhausted(env, "skyline random", err);
       console.error("Skyline random error:", err);
       // Random mode has no cache to fall back to — try any recent bucket
       const stale = await findStaleSkylineCache(env, dateStr, rotateMin, bucket, bwOnly ? ":bw" : "");
@@ -366,33 +420,41 @@ async function handleSkylinePng(env: Env, url: URL): Promise<Response> {
 
   // mode=rotate or daily → KV cached
   const bwSuffix = bwOnly ? ":bw" : "";
-  const cacheKey = mode === "rotate"
-    ? `skyline:v3:${dateStr}:r${rotateMin}:b${bucket}${bwSuffix}`
-    : `skyline:v3:${dateStr}:daily${bwSuffix}`;
+  const cacheKey = skylineCacheKey(dateStr, mode, rotateMin, bucket, bwOnly);
   const ttl = mode === "rotate" ? rotateMin * 60 : 86400;
   const maxAge = mode === "rotate" ? rotateMin * 60 : 86400;
 
-  const cached = await env.CACHE.get(cacheKey);
-  if (cached) {
+  const readSkylineCache = async (): Promise<Response | null> => {
+    const cached = await env.CACHE.get(cacheKey);
+    if (!cached) return null;
     console.log(`skyline.png: cache hit (${mode}, bucket=${bucket})`);
     try {
       const binary = Uint8Array.from(atob(cached), (c) => c.charCodeAt(0));
       return new Response(binary, {
         headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}`, "Access-Control-Allow-Origin": "*", ...debug },
       });
-    } catch { /* cache corrupted, regenerate */ }
-  }
+    } catch {
+      return null;
+    }
+  };
+
+  const cached = await readSkylineCache();
+  if (cached) return cached;
 
   try {
-    console.log(`Skyline ${mode}: ${city.name} | ${style.label} (${style.colorMode}) | bucket=${bucket}${bwOnly ? " sdxlOnly" : ""}`);
+    await assertAiBudgetAvailable(env);
+    return await withGenerationLock(env, cacheKey, readSkylineCache, async () => {
+      console.log(`Skyline ${mode}: ${city.name} | ${style.label} (${style.colorMode}) | bucket=${bucket}${bwOnly ? " sdxlOnly" : ""}`);
 
-    const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed, bwOnly);
-    await env.CACHE.put(cacheKey, result.base64, { expirationTtl: Math.max(ttl, 900) });
+      const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, style.colorMode, city.key, photoSeed, bwOnly);
+      await env.CACHE.put(cacheKey, result.base64, { expirationTtl: Math.max(ttl, 900) });
 
-    return new Response(result.png, {
-      headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}`, "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-UsedRef": String(result.usedRef) },
+      return new Response(result.png, {
+        headers: { "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}`, "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-UsedRef": String(result.usedRef) },
+      });
     });
   } catch (err) {
+    await markAiBudgetExhausted(env, "skyline.png", err);
     console.error("Skyline image error:", err);
 
     // Stale fallback: try recent previous buckets, then yesterday's cache
@@ -458,7 +520,14 @@ async function handleSkylineTestPng(env: Env, url: URL): Promise<Response> {
   console.log(`Skyline test: ${city.name} | ${style.label} (${colorMode}) | ${parts.dateStr} | mode=${mode}`);
 
   const debug = skylineDebugHeaders(parts.dateStr, mode, rotateMin, bucket, city, style.key, colorMode);
-  const result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, colorMode, city.key, photoSeed);
+  let result: Awaited<ReturnType<typeof generateSkylineImage>>;
+  try {
+    result = await generateSkylineImage(env, refPrompt, sdxlPrompt, caption, colorMode, city.key, photoSeed);
+  } catch (err) {
+    await markAiBudgetExhausted(env, "skyline-test.png", err);
+    console.error("Skyline test image error:", err);
+    return new Response("Failed to generate skyline image", { status: 503 });
+  }
   return new Response(result.png, {
     headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", ...debug, "X-Skyline-UsedRef": String(result.usedRef) },
   });
@@ -506,16 +575,17 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
   // Determine daily image keys (birthday-aware)
   const birthday = getBirthdayToday(monthNum, dayNum);
   const colorStyle = getColorMomentStyle(dateStr);
-  const fact4Key = birthday ? `birthday:v1:${dateStr}` : `fact4:v4:${dateStr}`;
-  const fact1Key = `fact1:v7:${dateStr}`;
-  const colorMomentKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
+  const fact4Key = birthday ? birthdayCacheKey(dateStr) : fact4CacheKey(dateStr);
+  const fact1Key = fact1CacheKey(dateStr);
+  const colorMomentKey = birthday ? colorBirthdayCacheKey(dateStr) : colorMomentCacheKey(dateStr, colorStyle.id);
   const skylineKey = DEFAULT_MODE === "daily"
-    ? `skyline:v3:${dateStr}:daily`
-    : `skyline:v3:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${computeBucket(DEFAULT_ROTATE_MIN)}`;
+    ? skylineCacheKey(dateStr, "daily", DEFAULT_ROTATE_MIN, computeBucket(DEFAULT_ROTATE_MIN))
+    : skylineCacheKey(dateStr, "rotate", DEFAULT_ROTATE_MIN, computeBucket(DEFAULT_ROTATE_MIN));
   const skylineBwKey = DEFAULT_MODE === "daily"
-    ? `skyline:v3:${dateStr}:daily:bw`
-    : `skyline:v3:${dateStr}:r${DEFAULT_ROTATE_MIN}:b${computeBucket(DEFAULT_ROTATE_MIN)}:bw`;
-  const momentKey = `moment:v1:${dateStr}`;
+    ? skylineCacheKey(dateStr, "daily", DEFAULT_ROTATE_MIN, computeBucket(DEFAULT_ROTATE_MIN), true)
+    : skylineCacheKey(dateStr, "rotate", DEFAULT_ROTATE_MIN, computeBucket(DEFAULT_ROTATE_MIN), true);
+  const momentKey = momentCacheKey(dateStr);
+  const aiBudgetBlock = await getAiBudgetBlock(env);
 
   // Fetch all keys in parallel
   const [
@@ -562,6 +632,13 @@ async function handleHealthDetailed(env: Env): Promise<Response> {
       },
       config: {
         test_auth_key: env.TEST_AUTH_KEY ? "configured" : "missing",
+        ai_budget: aiBudgetBlock
+          ? {
+              blocked: true,
+              source: aiBudgetBlock.source,
+              retry_after_min: Math.max(0, Math.ceil((aiBudgetBlock.blockUntil - Date.now()) / 60000)),
+            }
+          : { blocked: false },
       },
     },
     200,
@@ -581,21 +658,21 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     const monthNum = parseInt(month);
     const dayNum = parseInt(day);
 
-    // --- Every-6h: weather + device (parallel, independent) ---
-    // Headlines temporarily disabled — stale news problem; will rethink approach
+    // --- Every-6h: headlines + weather + device (parallel, independent) ---
     const sixHourResults = await Promise.allSettled([
+      getHeadlines(env, dateStr, getCurrentPeriod()),
       getWeather(env),
       getWeatherForLocation(env, 41.8781, -87.6298, "60606", "Chicago, IL"),
       fetchDeviceData(env, E1001_DEVICE_ID),
       fetchDeviceData(env, E1002_DEVICE_ID),
     ]);
-    const labels = ["weather-60540", "weather-60606", "device-E1001", "device-E1002"] as const;
+    const labels = ["headlines", "weather-60540", "weather-60606", "device-E1001", "device-E1002"] as const;
     for (let i = 0; i < sixHourResults.length; i++) {
       if (sixHourResults[i].status === "rejected") {
         console.error(`Cron: ${labels[i]} warm failed:`, (sixHourResults[i] as PromiseRejectedResult).reason);
       }
     }
-    console.log("Cron: warmed 6h data (weather, devices)");
+    console.log("Cron: warmed 6h data (headlines, weather, devices)");
 
     // --- Daily only: images + skyline ---
     if (!isDaily) return;
@@ -623,8 +700,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     // Sequential execution + early abort ensures core images are prioritized.
     let budgetExhausted = false;
     function isNeuronError(err: unknown): boolean {
-      const msg = String((err as any)?.message ?? err);
-      return msg.includes("4006") || msg.includes("neurons");
+      return isNeuronBudgetError(err);
     }
 
     // 1. Pipeline A (or birthday) — HIGHEST PRIORITY
@@ -633,16 +709,17 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
         if (birthday) {
           console.log(`Cron: birthday detected — ${birthday.name}`);
           const bdayPng = await generateBirthdayImage(env, birthday, yearNum);
-          await env.CACHE.put(`birthday:v1:${dateStr}`, pngToBase64(bdayPng), { expirationTtl: 604800 });
+          await env.CACHE.put(birthdayCacheKey(dateStr), pngToBase64(bdayPng), { expirationTtl: 604800 });
           console.log(`Cron: cached birthday image for ${birthday.name}`);
         } else {
           const png4 = await generateMomentImage(env, sharedMoment, displayDate, dateStr);
-          await env.CACHE.put(`fact4:v4:${dateStr}`, pngToBase64(png4), { expirationTtl: 604800 });
+          await env.CACHE.put(fact4CacheKey(dateStr), pngToBase64(png4), { expirationTtl: 604800 });
           console.log(`Cron: cached 4-level image for ${dateStr}`);
         }
       } catch (err) {
         if (isNeuronError(err)) {
           budgetExhausted = true;
+          await markAiBudgetExhausted(env, "cron Pipeline A", err);
           console.error("Cron: neuron budget exhausted at Pipeline A");
         } else {
           console.error("Cron: Pipeline A failed:", err);
@@ -654,11 +731,12 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     if (!budgetExhausted) {
       try {
         const png1 = await generateMomentImage1Bit(env, sharedMoment, displayDate, dateStr);
-        await env.CACHE.put(`fact1:v7:${dateStr}`, pngToBase64(png1), { expirationTtl: 604800 });
+        await env.CACHE.put(fact1CacheKey(dateStr), pngToBase64(png1), { expirationTtl: 604800 });
         console.log(`Cron: cached 1-bit image for ${dateStr}`);
       } catch (err) {
         if (isNeuronError(err)) {
           budgetExhausted = true;
+          await markAiBudgetExhausted(env, "cron Pipeline B", err);
           console.error("Cron: neuron budget exhausted at Pipeline B");
         } else {
           console.error("Cron: Pipeline B failed:", err);
@@ -670,7 +748,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     if (!budgetExhausted && !birthday) {
       try {
         const colorStyle = getColorMomentStyle(dateStr);
-        const colorCacheKey = `color-moment:v2:${dateStr}:${colorStyle.id}`;
+        const colorCacheKey = colorMomentCacheKey(dateStr, colorStyle.id);
         const existing = await env.CACHE.get(colorCacheKey);
         if (!existing) {
           const colorResult = await generateColorMoment(env, sharedMoment, dateStr);
@@ -685,6 +763,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
       } catch (err) {
         if (isNeuronError(err)) {
           budgetExhausted = true;
+          await markAiBudgetExhausted(env, "cron color moment", err);
           console.error("Cron: neuron budget exhausted at color moment");
         } else {
           console.error("Cron: color moment warm failed:", err);
@@ -695,8 +774,8 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     // 4. Skyline — daily mode (one generation per day) — LOWEST PRIORITY
     if (!budgetExhausted) {
       try {
-        const skylineCacheKey = `skyline:v3:${dateStr}:daily`;
-        const existingSkyline = await env.CACHE.get(skylineCacheKey);
+        const skylineDailyKey = skylineCacheKey(dateStr, "daily", DEFAULT_ROTATE_MIN, 0);
+        const existingSkyline = await env.CACHE.get(skylineDailyKey);
         if (!existingSkyline) {
           const skylineParts = parseDateParts(dateStr);
           const skylineOpts: SkylinePickerOpts = { mode: "daily", rotateMin: DEFAULT_ROTATE_MIN, bucket: 0 };
@@ -707,7 +786,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
           const skylineCaption = formatSkylineCaption(skylineCity, skylineParts.displayDate);
           const skylinePhotoSeed = djb2(`${dateStr}|photo|daily`);
           const skylineResult = await generateSkylineImage(env, skylineRefPrompt, skylineSdxlPrompt, skylineCaption, skylineStyle.colorMode, skylineCity.key, skylinePhotoSeed);
-          await env.CACHE.put(skylineCacheKey, skylineResult.base64, { expirationTtl: 86400 });
+          await env.CACHE.put(skylineDailyKey, skylineResult.base64, { expirationTtl: 86400 });
           console.log(`Cron: cached skyline daily (${skylineCity.name}, ${skylineStyle.label}, ref=${skylineResult.usedRef})`);
         } else {
           console.log(`Cron: skyline already cached for today`);
@@ -715,6 +794,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
       } catch (err) {
         if (isNeuronError(err)) {
           budgetExhausted = true;
+          await markAiBudgetExhausted(env, "cron skyline", err);
           console.error("Cron: neuron budget exhausted at skyline");
         } else {
           console.error("Cron: skyline warm failed:", err);
@@ -725,7 +805,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
     // 5. Skyline BW — daily mode
     if (!budgetExhausted) {
       try {
-        const bwCacheKey = `skyline:v3:${dateStr}:daily:bw`;
+        const bwCacheKey = skylineCacheKey(dateStr, "daily", DEFAULT_ROTATE_MIN, 0, true);
         const existingBw = await env.CACHE.get(bwCacheKey);
         if (!existingBw) {
           const bwParts = parseDateParts(dateStr);
@@ -745,6 +825,7 @@ async function handleScheduled(env: Env, cronExpression: string): Promise<void> 
       } catch (err) {
         if (isNeuronError(err)) {
           budgetExhausted = true;
+          await markAiBudgetExhausted(env, "cron skyline BW", err);
           console.error("Cron: neuron budget exhausted at skyline BW");
         } else {
           console.error("Cron: skyline BW warm failed:", err);
@@ -797,9 +878,18 @@ export default {
       case "/fact1.png":
         return handleFact1BitImage(env);
       case "/fact-raw.jpg": {
+        const budgetBlockRaw = await checkAiBudget(env);
+        if (budgetBlockRaw) return budgetBlockRaw;
         const { events, displayDate } = await getTodayEvents(env);
         const moment = await generateMomentBefore(env, events);
-        const jpeg = await generateMomentImageRaw(env, moment);
+        let jpeg: Uint8Array;
+        try {
+          jpeg = await generateMomentImageRaw(env, moment);
+        } catch (err) {
+          await markAiBudgetExhausted(env, "fact-raw.jpg", err);
+          console.error("Raw fact image error:", err);
+          return new Response("Failed to generate raw image", { status: 503 });
+        }
         return new Response(jpeg, {
           headers: { "Content-Type": "image/jpeg", "Access-Control-Allow-Origin": "*" },
         });
@@ -807,6 +897,8 @@ export default {
       case "/test.png": {
         const authBlock = checkTestAuth(url, env);
         if (authBlock) return authBlock;
+        const budgetBlock = await checkAiBudget(env);
+        if (budgetBlock) return budgetBlock;
         // Test with a custom date: /test.png?m=10&d=20
         const m = parseMonth(url.searchParams.get("m") ?? "10");
         const d = parseDay(url.searchParams.get("d") ?? "20");
@@ -822,7 +914,14 @@ export default {
         const displayDate = `${months[m - 1]} ${d}`;
         const testDateStr = `2026-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
         const moment = await generateMomentBefore(env, testEvents);
-        const png = await generateMomentImage(env, moment, displayDate, testDateStr);
+        let png: Uint8Array;
+        try {
+          png = await generateMomentImage(env, moment, displayDate, testDateStr);
+        } catch (err) {
+          await markAiBudgetExhausted(env, "test.png", err);
+          console.error("Test image error:", err);
+          return new Response("Failed to generate image", { status: 503 });
+        }
         return new Response(png, {
           headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
         });
@@ -830,6 +929,8 @@ export default {
       case "/test1.png": {
         const authBlock1 = checkTestAuth(url, env);
         if (authBlock1) return authBlock1;
+        const budgetBlock1 = await checkAiBudget(env);
+        if (budgetBlock1) return budgetBlock1;
         // Test 1-bit with a custom date: /test1.png?m=10&d=31&style=woodcut
         const m1 = parseMonth(url.searchParams.get("m") ?? "10");
         const d1 = parseDay(url.searchParams.get("d") ?? "20");
@@ -846,7 +947,14 @@ export default {
         const displayDate1 = `${months1[m1 - 1]} ${d1}`;
         const testDateStr = `2026-${String(m1).padStart(2, "0")}-${String(d1).padStart(2, "0")}`;
         const moment1 = await generateMomentBefore(env, testEvents1);
-        const png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr, forceStyle);
+        let png1: Uint8Array;
+        try {
+          png1 = await generateMomentImage1Bit(env, moment1, displayDate1, testDateStr, forceStyle);
+        } catch (err) {
+          await markAiBudgetExhausted(env, "test1.png", err);
+          console.error("Test 1-bit image error:", err);
+          return new Response("Failed to generate image", { status: 503 });
+        }
         return new Response(png1, {
           headers: {
             "Content-Type": "image/png",
@@ -858,6 +966,8 @@ export default {
       case "/test-birthday.png": {
         const authBlockBday = checkTestAuth(url, env);
         if (authBlockBday) return authBlockBday;
+        const budgetBlockBday = await checkAiBudget(env);
+        if (budgetBlockBday) return budgetBlockBday;
         // Test birthday portrait: /test-birthday.png?name=thiago&style=3
         const nameParam = url.searchParams.get("name") ?? "thiago";
         const person = getBirthdayByKey(nameParam);
@@ -873,6 +983,7 @@ export default {
             headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" },
           });
         } catch (err) {
+          await markAiBudgetExhausted(env, "test-birthday.png", err);
           console.error("Test birthday error:", err);
           return new Response("Failed to generate birthday image", { status: 503 });
         }
@@ -899,8 +1010,7 @@ export default {
         // Redirect legacy APOD route to skyline
         return Response.redirect(new URL("/skyline", url).href, 301);
       case "/color/headlines":
-        // Headlines temporarily disabled — redirect to skyline so E1002 pagelist doesn't break
-        return Response.redirect(new URL("/skyline", url).href, 302);
+        return handleColorHeadlinesPage(env, url);
       case "/skyline.png":
         return handleSkylinePng(env, url);
       case "/skyline":
@@ -910,6 +1020,8 @@ export default {
       case "/skyline-test.png": {
         const authBlockST = checkTestAuth(url, env);
         if (authBlockST) return authBlockST;
+        const budgetBlockST = await checkAiBudget(env);
+        if (budgetBlockST) return budgetBlockST;
         return handleSkylineTestPng(env, url);
       }
       case "/skyline-test": {
@@ -927,7 +1039,7 @@ export default {
             error: "Not found",
             endpoints: [
               "/weather", "/fact", "/weather.json", "/fact.json", "/fact.png", "/fact1.png",
-              "/color/weather", "/color/moment",
+              "/color/weather", "/color/moment", "/color/headlines",
               "/skyline", "/skyline-bw", "/skyline.png",
               "/test-birthday.png", "/health", "/health-detailed",
             ],

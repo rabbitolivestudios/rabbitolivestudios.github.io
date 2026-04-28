@@ -26,6 +26,13 @@ import { WIDTH, HEIGHT } from "../image";
 import { escapeHTML } from "../escape";
 import { htmlResponse } from "../response";
 import { parseMonth, parseDay, parseStyleIdx } from "../validate";
+import { colorBirthdayCacheKey, colorMomentCacheKey } from "../cache-keys";
+import {
+  assertAiBudgetAvailable,
+  isNeuronBudgetError,
+  markAiBudgetExhausted,
+  withGenerationLock,
+} from "../cache-guard";
 
 const ANTI_TEXT_SUFFIX = "no text, no words, no letters, no writing, no signage, no captions, no watermark";
 
@@ -88,6 +95,7 @@ export async function generateColorMoment(
     rgb = await generateAndDecodeColorFlux(env, prompt);
   } catch (err) {
     console.error("Color moment FLUX.2 failed:", err);
+    if (isNeuronBudgetError(err)) throw err;
   }
 
   // Fallback to SDXL
@@ -136,6 +144,7 @@ async function generateColorBirthday(
     rgb = await jpegToRGB(env, jpegBytes);
   } catch (err) {
     console.error("Color birthday FLUX.2 failed:", err);
+    if (isNeuronBudgetError(err)) throw err;
   }
 
   // Fallback: SDXL with text-only prompt (no reference photos — API limitation)
@@ -234,57 +243,85 @@ export async function handleColorMomentPage(env: Env, url: URL): Promise<Respons
   // Check KV cache
   const birthday = getBirthdayToday(monthNum, dayNum);
   const colorStyle = getColorMomentStyle(dateStr);
-  const cacheKey = birthday ? `color-birthday:v1:${dateStr}` : `color-moment:v2:${dateStr}:${colorStyle.id}`;
+  const cacheKey = birthday ? colorBirthdayCacheKey(dateStr) : colorMomentCacheKey(dateStr, colorStyle.id);
 
-  const cached = await env.CACHE.get(cacheKey);
-  if (cached) {
+  const readCache = async (): Promise<Response | null> => {
+    const cached = await env.CACHE.get(cacheKey);
+    if (!cached) return null;
     console.log(`color/moment: cache hit (${cacheKey})`);
     try {
       const data = JSON.parse(cached);
       const html = renderHTML(data.imageB64, data.moment, data.displayDate, data.birthdayInfo);
       return htmlResponse(html, "public, max-age=86400");
-    } catch { /* cache corrupted, regenerate */ }
-  }
+    } catch {
+      return null;
+    }
+  };
+
+  const cached = await readCache();
+  if (cached) return cached;
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const displayDate = `${months[monthNum - 1]} ${dayNum}`;
   const currentYear = parseInt(year);
 
-  let imageB64: string;
-  let moment: MomentBeforeData;
-  let birthdayInfo: BirthdayCaptionInfo | undefined;
+  try {
+    await assertAiBudgetAvailable(env);
+    return await withGenerationLock(env, cacheKey, readCache, async () => {
+      let imageB64: string;
+      let moment: MomentBeforeData;
+      let birthdayInfo: BirthdayCaptionInfo | undefined;
 
-  if (birthday) {
-    const age = currentYear - birthday.birthYear;
-    const style = getArtStyle(currentYear);
-    moment = { year: currentYear, location: "", title: birthday.name, scene: "", imagePrompt: "" };
-    try {
-      imageB64 = await generateColorBirthday(env, birthday, currentYear);
-      birthdayInfo = { name: birthday.name, age, styleName: style.name };
-    } catch (err) {
-      console.error("Color birthday failed, falling back to moment:", err);
-      const { events } = await getTodayEvents(env);
-      moment = await getOrGenerateMoment(env, events, dateStr);
-      const result = await generateColorMoment(env, moment, dateStr);
-      imageB64 = result.base64;
-    }
-  } else {
-    const { events } = await getTodayEvents(env);
-    moment = await getOrGenerateMoment(env, events, dateStr);
-    const result = await generateColorMoment(env, moment, dateStr);
-    imageB64 = result.base64;
+      if (birthday) {
+        const age = currentYear - birthday.birthYear;
+        const style = getArtStyle(currentYear);
+        moment = { year: currentYear, location: "", title: birthday.name, scene: "", imagePrompt: "" };
+        try {
+          imageB64 = await generateColorBirthday(env, birthday, currentYear);
+          birthdayInfo = { name: birthday.name, age, styleName: style.name };
+        } catch (err) {
+          if (isNeuronBudgetError(err)) throw err;
+          console.error("Color birthday failed, falling back to moment:", err);
+          const { events } = await getTodayEvents(env);
+          moment = await getOrGenerateMoment(env, events, dateStr);
+          const result = await generateColorMoment(env, moment, dateStr);
+          imageB64 = result.base64;
+        }
+      } else {
+        const { events } = await getTodayEvents(env);
+        moment = await getOrGenerateMoment(env, events, dateStr);
+        const result = await generateColorMoment(env, moment, dateStr);
+        imageB64 = result.base64;
+      }
+
+      // Cache the result
+      const cacheData = JSON.stringify({ imageB64, moment, displayDate, birthdayInfo });
+      await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 604800 });
+
+      const html = renderHTML(imageB64, moment, displayDate, birthdayInfo);
+      return htmlResponse(html, "public, max-age=86400");
+    });
+  } catch (err) {
+    await markAiBudgetExhausted(env, "color/moment", err);
+    console.error("Color moment page error:", err);
+    return new Response("Color moment temporarily unavailable", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "300" },
+    });
   }
-
-  // Cache the result
-  const cacheData = JSON.stringify({ imageB64, moment, displayDate, birthdayInfo });
-  await env.CACHE.put(cacheKey, cacheData, { expirationTtl: 604800 });
-
-  const html = renderHTML(imageB64, moment, displayDate, birthdayInfo);
-  return htmlResponse(html, "public, max-age=86400");
 }
 
 /** Test endpoint for color moment with custom date. */
 export async function handleColorTestMoment(env: Env, url: URL): Promise<Response> {
+  try {
+    await assertAiBudgetAvailable(env);
+  } catch (err) {
+    return new Response(String((err as any)?.message ?? err), {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "300" },
+    });
+  }
+
   const m = parseMonth(url.searchParams.get("m") ?? "7");
   const d = parseDay(url.searchParams.get("d") ?? "20");
   const forceStyle = url.searchParams.get("style") ?? undefined;
@@ -301,8 +338,15 @@ export async function handleColorTestMoment(env: Env, url: URL): Promise<Respons
   const displayDate = `${months[m - 1]} ${d}`;
   const testDateStr = `2026-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
+  let result: Awaited<ReturnType<typeof generateColorMoment>>;
   const moment = await generateMomentBefore(env, testEvents);
-  const result = await generateColorMoment(env, moment, testDateStr, forceStyle);
+  try {
+    result = await generateColorMoment(env, moment, testDateStr, forceStyle);
+  } catch (err) {
+    await markAiBudgetExhausted(env, "color/test-moment", err);
+    console.error("Color test moment error:", err);
+    return new Response("Failed to generate color moment image", { status: 503 });
+  }
 
   const html = renderHTML(result.base64, moment, displayDate);
   return htmlResponse(html, "no-store");
@@ -324,6 +368,7 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
   const currentYear = new Date().getFullYear();
 
   try {
+    await assertAiBudgetAvailable(env);
     const style = styleIdx !== undefined ? getArtStyle(2020 + styleIdx) : getArtStyle(currentYear);
     const age = currentYear - person.birthYear;
     const imageB64 = await generateColorBirthday(env, person, currentYear, styleIdx);
@@ -332,6 +377,7 @@ export async function handleColorTestBirthday(env: Env, url: URL): Promise<Respo
     const html = renderHTML(imageB64, moment, "Birthday", birthdayInfo);
     return htmlResponse(html, "no-store");
   } catch (err) {
+    await markAiBudgetExhausted(env, "color/test-birthday", err);
     console.error("Color test birthday error:", err);
     return new Response("Failed to generate color birthday image", { status: 503 });
   }

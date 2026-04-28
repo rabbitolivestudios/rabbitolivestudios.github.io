@@ -1,10 +1,13 @@
 {
   "name": "eink-dashboard",
-  "version": "3.11.1",
+  "version": "3.11.2",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "dry-run": "wrangler deploy --dry-run",
+    "typecheck": "tsc --noEmit",
+    "test:utils": "tsc -p tsconfig.test.json --outDir /tmp/eink-dashboard-tests && EINK_TEST_BUILD_DIR=/tmp/eink-dashboard-tests node --test tests/*.test.js",
     "upload-photos": "bash scripts/upload-photos.sh"
   },
   "devDependencies": {

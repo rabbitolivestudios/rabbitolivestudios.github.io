@@ -19,6 +19,7 @@ import { FONT_8X8 as FONT_DATA } from "./font";
 import { applyToneCurve } from "./convert-1bit";
 import { convert1Bit } from "./convert-1bit";
 import { pick1BitStyle, findStyleByName, ANTI_TEXT_SUFFIX } from "./styles-1bit";
+import { isNeuronBudgetError } from "./cache-guard";
 import type { Env, MomentBeforeData } from "./types";
 
 export const WIDTH = 800;
@@ -450,6 +451,7 @@ export async function generateMomentImage(
     gray = await generateAndDecodeGrayFlux(env, styledPrompt);
   } catch (err) {
     console.error("Pipeline A FLUX.2 failed:", err);
+    if (isNeuronBudgetError(err)) throw err;
   }
 
   // Fallback to SDXL with woodcut style

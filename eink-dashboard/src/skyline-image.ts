@@ -31,6 +31,7 @@ import { generateAndDecodeColor } from "./image-color";
 import { ditherFloydSteinberg } from "./dither-spectra6";
 import { SPECTRA6_PALETTE } from "./spectra6";
 import { getPhotoFromR2 } from "./birthday-image";
+import { isNeuronBudgetError } from "./cache-guard";
 
 // SDXL params (same as Pipeline B — stable for architectural subjects)
 const SDXL_STEPS = 20;
@@ -324,6 +325,7 @@ async function generateSkylineJpeg(
         return { jpeg, usedRef: true };
       } catch (err) {
         console.error("Skyline FLUX.2 failed:", err);
+        if (isNeuronBudgetError(err)) throw err;
         console.log("Skyline: falling back to SDXL");
       }
     }

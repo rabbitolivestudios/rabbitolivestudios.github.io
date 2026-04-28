@@ -1,14 +1,13 @@
 /**
  * Steel & trade headlines aggregator.
  *
- * Fetches RSS/API sources for steel tariff and trade news,
- * deduplicates, and uses LLM to generate 2-line summaries.
+ * Fetches RSS/HTML sources for steel tariff and trade news,
+ * deduplicates, and ranks them without using Workers AI.
  */
 
 import { fetchWithTimeout } from "./fetch-timeout";
 import type { Env, Headline, CachedValue } from "./types";
 
-const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 interface RawItem {
@@ -137,6 +136,55 @@ function categorize(title: string, description: string): Headline["category"] {
   return "company";
 }
 
+function sourceWeight(source: string): number {
+  if (source === "Steel Industry News") return 30;
+  if (source === "SteelOrbis") return 24;
+  return 12;
+}
+
+function topicWeight(title: string, description: string): number {
+  const text = `${title} ${description}`.toLowerCase();
+  let score = 0;
+  if (/tariff|section 232|anti.?dumping|countervail|import|export|trade/i.test(text)) score += 12;
+  if (/price|hrc|scrap|rebar|coil|plate|market|index/i.test(text)) score += 10;
+  if (/nucor|cleveland-cliffs|us steel|steel dynamics|arcelormittal/i.test(text)) score += 8;
+  if (/\d+(?:\.\d+)?%|\$\d+|\b\d{3,}\b/.test(text)) score += 6;
+  if (/podcast|webinar|sponsored|subscribe|newsletter/i.test(text)) score -= 20;
+  return score;
+}
+
+function firstReadableSentence(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentence = clean.match(/^(.{40,220}?[.!?])\s/)?.[1] ?? clean;
+  return sentence.length > 180 ? sentence.slice(0, 177).trimEnd() + "..." : sentence;
+}
+
+function fallbackSummary(item: RawItem): string {
+  const sentence = firstReadableSentence(item.description);
+  if (sentence) return sentence;
+  return item.title.length > 180 ? item.title.slice(0, 177).trimEnd() + "..." : item.title;
+}
+
+/** Select and summarize headlines without using the LLM neuron budget. */
+function selectHeadlines(items: RawItem[]): Headline[] {
+  return [...items]
+    .sort((a, b) => {
+      const scoreA = sourceWeight(a.source) + topicWeight(a.title, a.description);
+      const scoreB = sourceWeight(b.source) + topicWeight(b.title, b.description);
+      return scoreB - scoreA;
+    })
+    .slice(0, 4)
+    .map((item) => ({
+      title: item.title,
+      source: item.source,
+      timestamp: item.pubDate,
+      summary: fallbackSummary(item),
+      category: categorize(item.title, item.description),
+      link: item.link,
+    }));
+}
+
 /** Fetch headlines from RSS + HTML sources. */
 async function fetchRawItems(): Promise<RawItem[]> {
   const headers = { "User-Agent": "eink-dashboard/3.9 (Cloudflare Worker)" };
@@ -183,79 +231,8 @@ async function fetchRawItems(): Promise<RawItem[]> {
   return results.flat();
 }
 
-/** Use LLM to select and summarize the best headlines. Returns up to 4 selected headlines. */
-async function summarizeWithLLM(
-  env: Env,
-  items: RawItem[]
-): Promise<Headline[]> {
-  const headlinesText = items.map((item, i) =>
-    `${i + 1}. "${item.title}" (${item.source})\n   ${item.description}`
-  ).join("\n\n");
-
-  try {
-    const response: any = await env.AI.run(LLM_MODEL, {
-      messages: [
-        {
-          role: "system",
-          content: `You are a steel industry analyst writing for mill buyers and trade professionals. From the headlines provided, select the 4 most significant items. Prioritize: price moves, tariff decisions, import/export data, major company actions. Skip: podcast and video announcements, subscription pitches, generic overviews without new data, duplicates.
-
-For each selected item write exactly 2 sentences:
-- Sentence 1: state the specific fact — what changed, by how much, who did it, when. Extract all numbers, percentages, company names, and policy names from the title and description. Never be vague.
-- Sentence 2: state the concrete market implication — what this means for buyers, mills, or pricing. Use your industry knowledge to add context beyond the title.
-
-NEVER use hedge language: forbidden phrases include "may affect", "could impact", "might lead to", "may result in", "remains to be seen". State facts and implications directly.
-
-Reply with ONLY a valid JSON array, no markdown fences, using the original 1-based index of each selected item:
-[{"index":1,"summary":"..."},{"index":5,"summary":"..."},...]`
-        },
-        {
-          role: "user",
-          content: `Select 4 and summarize:\n\n${headlinesText}`,
-        },
-      ],
-      max_tokens: 800,
-      temperature: 0.3,
-    });
-
-    const raw = response?.response ?? response?.result?.response ?? "";
-    const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) {
-      const summaries: any[] = JSON.parse(match[0]);
-      return summaries
-        .map((s: any) => {
-          const item = items[s.index - 1];
-          if (!item || !s.summary) return null;
-          return {
-            title: item.title,
-            source: item.source,
-            timestamp: item.pubDate,
-            summary: s.summary,
-            category: categorize(item.title, item.description),
-            link: item.link,
-          } as Headline;
-        })
-        .filter((h): h is Headline => h !== null)
-        .slice(0, 4);
-    }
-  } catch (err) {
-    console.error("Headlines LLM error:", err);
-  }
-
-  // Fallback: return first 4 items with description as summary
-  return items.slice(0, 4).map(item => ({
-    title: item.title,
-    source: item.source,
-    timestamp: item.pubDate,
-    summary: item.description.slice(0, 120),
-    category: categorize(item.title, item.description),
-    link: item.link,
-  }));
-}
-
 /**
- * Get steel/trade headlines with LLM summaries.
+ * Get steel/trade headlines without Workers AI.
  * Cached in KV for 6 hours per period.
  */
 export async function getHeadlines(
@@ -280,7 +257,7 @@ export async function getHeadlines(
       return cached?.data ?? [];
     }
 
-    const headlines = await summarizeWithLLM(env, top10);
+    const headlines = selectHeadlines(top10);
     await env.CACHE.put(cacheKey, JSON.stringify({ data: headlines, timestamp: Date.now() }), { expirationTtl: 604800 });
     return headlines;
   } catch (err) {

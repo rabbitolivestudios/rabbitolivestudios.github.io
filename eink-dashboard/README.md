@@ -35,7 +35,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | **E1002 Color Endpoints** | | |
 | `GET /color/weather` | 800x480 color HTML weather dashboard (Spectra 6 palette accents, moon phase) | 30 min |
 | `GET /color/moment` | 800x480 color "Moment Before" (Floyd-Steinberg dithered to 6 colors) | 24 hours |
-| `GET /color/headlines` | ~~Headlines~~ — temporarily disabled (302 → `/skyline`) | — |
+| `GET /color/headlines` | Steel/trade headlines page for E1002. Uses deterministic RSS/source ranking, no LLM call. | 6 hours |
 | `GET /color/test-moment?m=MM&d=DD&style=ID&key=KEY` | Generate color moment for any date + optional style override (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/test-birthday?name=KEY&style=N&key=KEY` | Generate color birthday portrait (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/headlines?test-headlines` | Headlines page with fake test data | none |
@@ -47,6 +47,7 @@ Example: For the sinking of the Titanic, the image would show the ocean liner ti
 | `GET /skyline-test.png?date=...&city=...&style=...&color=0\|1&mode=...&key=KEY` | Test skyline PNG with overrides (requires `TEST_AUTH_KEY`) | none |
 | `GET /color/apod` | 301 redirect to `/skyline` (legacy compatibility) | — |
 | `GET /health` | Status check | none |
+| `GET /health-detailed` | Cache health, daily image cache status, telemetry age, and AI budget pause status | none |
 
 ## Live URL
 
@@ -91,6 +92,9 @@ id = "your-namespace-id-here"
 ### Step 4: Deploy
 
 ```bash
+npm run typecheck
+npm run test:utils
+npm run dry-run
 npx wrangler deploy
 ```
 
@@ -358,6 +362,32 @@ The reTerminal's SenseCraft HMI has a "Web Function" that screenshots a URL onto
 5. If the device is asleep, press the button on the reTerminal to wake it
 
 The display will automatically cycle between pages every 15 minutes. Each page effectively refreshes every 30 minutes (every other cycle). The fact image is cached for 24h in KV, so frequent fetches cost nothing.
+
+## Operational Safeguards
+
+v3.11.2 adds guardrails around expensive AI generation:
+
+- `/fact.png` and `/fact1.png` use the shared `moment:v1:YYYY-MM-DD` cache on request-path cache misses, matching cron behavior.
+- Cached AI routes use short KV-backed generation locks (`gen-lock:v1:*`) so duplicate cold-cache requests usually wait for the first request to fill the cache.
+- Workers AI neuron-budget errors set `ai-budget:v1:block` for 6 hours. During that pause, cached images still serve, but new AI generation returns a 503 instead of cascading through fallback models.
+- `/skyline.png` still tries stale skyline caches, and color skyline can serve cached BW skyline as a final visual fallback.
+- `/color/headlines` is back on without Workers AI; it ranks RSS/scraped sources deterministically and caches results as `headlines:v3:YYYY-MM-DD:PERIOD`.
+
+### Rollback
+
+These changes are isolated on the `codex/reliability-hardening-six-pack` branch. If something breaks before merge, switch back to `main`:
+
+```bash
+git checkout main
+```
+
+If this branch is merged and then needs to be backed out, revert the v3.11.2 commit:
+
+```bash
+git revert <v3.11.2-commit-sha>
+npm run typecheck
+npm run dry-run
+```
 
 ### Firmware Update
 

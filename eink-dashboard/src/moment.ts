@@ -11,6 +11,7 @@
  */
 
 import type { Env, MomentBeforeData, CachedValue } from "./types";
+import { momentCacheKey } from "./cache-keys";
 
 const LLM_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
 
@@ -180,7 +181,7 @@ export async function getOrGenerateMoment(
   events: Array<{ year: number; text: string }>,
   dateStr: string,
 ): Promise<MomentBeforeData> {
-  const cacheKey = `moment:v1:${dateStr}`;
+  const cacheKey = momentCacheKey(dateStr);
 
   const cached = await env.CACHE.get<CachedValue<MomentBeforeData>>(cacheKey, "json");
   if (cached && Date.now() - cached.timestamp < MOMENT_CACHE_TTL_MS) {

@@ -94,7 +94,7 @@ The project produces two versions of each day's image:
 | `/fact.png` | Pipeline A | 4-level grayscale (8-bit PNG) | Displays with grayscale support |
 | `/fact1.png` | Pipeline B | 1-bit Bayer dithered (1-bit PNG) | Mono e-ink displays |
 
-Both pipelines share the same LLM event selection (scene-only prompts), but each prepends its own art style, uses its own image model, and makes its own LLM + AI call (different events are possible). They diverge at style injection and post-processing:
+Both pipelines share the same cached LLM event selection (`moment:v1:YYYY-MM-DD`, scene-only prompt), but each prepends its own art style and uses its own image model. They diverge at style injection and post-processing:
 
 **Pipeline A (4-level):**
 1. Prepend daily style → FLUX.2 klein-9b → grayscale → caption (24px black bar, white text) → tone curve (1.2, 0.95) → quantize to 4 levels (0, 85, 170, 255) → 8-bit PNG
@@ -225,7 +225,7 @@ Location (left)     Event Title (centered in gap)     Date, Year (right)
 - One `SYSTEM_PROMPT` constant that instructs the LLM to write scene-only prompts (no art style)
 - The LLM writes scene descriptions covering subject, setting, composition, lighting, and mood
 - Each pipeline prepends its own style before image generation
-- Both pipelines use the same LLM output format (each makes its own call, so different events are possible)
+- Pipelines use the shared `getOrGenerateMoment()` cache so the selected event is consistent across displays on cron and request-path cache misses.
 
 **Response handling:**
 - The LLM `.response` field may not be a string — always coerce: `typeof raw === "string" ? raw : JSON.stringify(raw)`
@@ -451,7 +451,7 @@ The reTerminal E1002 has a 7.3" E Ink Spectra 6 display with 6 native pigment co
 - Falls back to `DEMO_KEY` (rate limited but works)
 - HD image URL preferred for better dither quality
 
-**Headlines RSS + LLM summarization:**
+**Headlines RSS + LLM summarization (superseded by v3.11.2 non-LLM ranking in Decision #39):**
 - Google News RSS + Federal Register API
 - LLM summarizes to 2 lines per headline (temperature 0.3 for factual output)
 - Cached 6h per period (0/6/12/18 hours, Chicago time)
@@ -1121,7 +1121,7 @@ Moon icons are algorithmically generated (terminator arc varies continuously), u
 
 1. **Single FLUX.2 attempt everywhere** — All 4 retry loops replaced with single attempt + SDXL fallback. Saves up to 3 wasted FLUX.2 calls.
 
-2. **Headlines disabled** — Removed from cron (saves 1 LLM call per 6h), `/color/headlines` 302 redirects to `/skyline` so E1002 pagelist doesn't break.
+2. **Headlines disabled** — Removed from cron (saves 1 LLM call per 6h), `/color/headlines` 302 redirects to `/skyline` so E1002 pagelist doesn't break. Superseded in v3.11.2 by non-LLM deterministic headline ranking.
 
 3. **Skyline BW uses SDXL-only** — `sdxlOnly` parameter added to `generateSkylineImage`. BW skyline skips FLUX.2 entirely since SDXL produces good BW artwork and saves 1 FLUX.2 call. On-demand `/skyline.png?bw=1` also uses SDXL-only.
 
@@ -1133,3 +1133,45 @@ Moon icons are algorithmically generated (terminator arc varies continuously), u
 **BW cross-fallback for color skyline:** When color skyline generation fails and no stale color cache exists, the handler now serves the BW skyline cache instead of returning 503 (blank screen). Fallback chain: color cache → generate → stale color → BW cache → 503. Response includes `X-Skyline-Fallback: bw-cross` header for diagnostics.
 
 **Files changed:** `image.ts`, `pages/color-moment.ts`, `birthday-image.ts`, `skyline-image.ts`, `index.ts`, `package.json`
+
+---
+
+## 39. Reliability Hardening Six-Pack (v3.11.2, 2026-04-27)
+
+### Decision: Make request paths consistent, cache-aware, and cheaper under failure
+
+This release applies six targeted improvements without changing the visual design:
+
+1. **Shared Moment on request paths.** `/fact.png` and `/fact1.png` now use `getOrGenerateMoment()` on cold cache misses, matching cron and color moment behavior. This prevents the mono 4-level and 1-bit pipelines from picking different events when cron misses or KV is cold.
+
+2. **KV-backed generation locks.** Cached AI routes use short soft locks (`gen-lock:v1:{cacheKey}`) before generation. Cloudflare KV is not atomic, so this is best-effort, but it lets duplicate cold-cache requests wait briefly for the first request to populate the real cache instead of immediately starting another AI call.
+
+3. **Explicit npm scripts.** Added `npm run typecheck`, `npm run test:utils`, and `npm run dry-run` so the required verification commands are encoded in the project instead of only in docs.
+
+4. **Pure utility tests.** Added a tiny Node test suite for query validation, skyline date/picker behavior, moon override clamping, histogram thresholding, and cache-key construction. The test build compiles TypeScript into `/tmp/eink-dashboard-tests` to avoid generated files in the repo.
+
+5. **AI budget pause marker.** Request paths now check `ai-budget:v1:block`. When Workers AI returns a neuron-budget error (`4006` or "neurons"), the Worker writes a 6-hour marker. Cached content still serves, but new AI generation returns 503/Retry-After or uses stale skyline fallback instead of cascading through fallback models and wasting more calls.
+
+6. **Non-LLM headlines restored.** `/color/headlines` is live again, but no longer uses Workers AI. `headlines.ts` fetches Steel Industry News, SteelOrbis, and Google News RSS, deduplicates, ranks deterministically by source/topic/numeric signal, and displays compact source summaries. Cron warms `headlines:v3:{date}:{period}` every 6 hours.
+
+### Rollback
+
+Changes are isolated on branch `codex/reliability-hardening-six-pack`. Before merge, rollback is simply:
+
+```bash
+git checkout main
+```
+
+After merge, revert the v3.11.2 commit and verify:
+
+```bash
+git revert <v3.11.2-commit-sha>
+npm run typecheck
+npm run dry-run
+```
+
+### Notes
+
+- Cache key versions for existing image artifacts did not change: output format and visual processing are unchanged. New helper functions centralize the existing key formats.
+- `package.json`, `src/index.ts` `VERSION`, and package lock metadata are bumped to `3.11.2`.
+- `MEMORY.md` references in older docs refer to Claude Code's auto-memory workflow; this checkout may not contain a tracked `MEMORY.md`.
